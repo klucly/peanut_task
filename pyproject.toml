@@ -1,7 +1,7 @@
 # ---- Project Info and Dependencies ----
 
 [project.urls]
-Repository = "https://github.com/{{ package_github_org }}/{{ package_name }}"
+Repository = "https://github.com/klucly/peanut_task.git"
 
 [project]
 name = "peanut_task"
