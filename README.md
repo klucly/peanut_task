@@ -1,66 +1,91 @@
-## Requirements
 
-- Python +3.11
-- [uv](https://github.com/astral-sh/uv) (global install recommended)
+# peanut_task
+
+A test task for getting into Penut Trade.
+
+## Requirements
+- Rust 1.80+ (2024 edition or newer recommended)
+- [just](https://github.com/casey/just) command runner (install via `cargo install just` or your package manager)
+- [rustup](https://rustup.rs/) recommended for managing toolchains & components (rust-analyzer, clippy, etc.)
 
 ## Installation
 
 1. Clone the repository:
-
    ```bash
    git clone https://github.com/klucly/peanut_task.git
    cd peanut_task
    ```
 
-2. Install uv (if not already installed):
+2. Install `just` (if not already installed):
+   - Arch Linux:
+     ```bash
+     sudo pacman -S just
+     ```
+   - Most systems (via Cargo):
+     ```bash
+     cargo install just
+     ```
+   - Homebrew (macOS):
+     ```bash
+     brew install just
+     ```
+   - Other options: see https://github.com/casey/just#installation
 
-    Windows:
-   ```powershell
-   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-   ```
-
-    Linux:
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    ```
-
-    MacOS:
-    ```bash
-    brew install uv
-    ```
-
-3. Sync dependencies (creates `.venv` and installs everything):
-
+3. Install common Rust components (optional but recommended for development):
    ```bash
-   make install
+   rustup component add rust-src clippy rustfmt
    ```
+
+4. Sync dependencies & build (creates `target/`):
+   ```bash
+   just install
+   ```
+   (This usually just runs `cargo build` + `cargo fmt`/`clippy` checks — see Development Commands below)
+
+## Setup .env
+
+Copy `.env.example/` to `.env`
 
 ## Run the Project
 
 ```bash
-make run
+just run
 ```
+
+(Or with arguments: `just run -- --verbose`)
 
 ## Example Output
 
 Current implementation (as of initial version):
 
 ```
-IM WORKING LOL
+Secret info: `123`
+Works
 ```
 
 ## Limitations & Assumptions
+- **Rust version**: Tested with stable 1.84+. May work on older editions but not guaranteed.
+- **Error handling**: Minimal – assumes happy path for baseline.
+- **Platform**: Developed on Linux (Arch). Should work on macOS/Windows but shell commands in `justfile` or file paths / env vars may need minor tweaks.
+- **dotenv**: Loads `.env` at runtime if present.
 
-- **Python version**: Tested on 3.14.2. May work on 3.11 - 3.13 but not guaranteed.
-- **Error handling**: Minimal – assumes happy path.
-- **Platform**: Developed on Linux (Arch). Should work on macOS/Windows but file paths / env vars may need tweaks.
+## Development Commands (just cheatsheet)
 
-## Development Commands (Makefile cheatsheet)
+Run `just --list` to see all available commands with descriptions.
+
+Common ones:
 
 ```bash
-make install     # sync dependencies
-make lint        # run ruff + basedpyright checks
-make test        # run pytest
-make run         # run the main script
-make clean       # remove caches, venv, dist/
+just              # Runs the default pipeline: lint → build → test
+just all          # lint + build + test + doc
+just ci           # Same as CI would run (lint + build + test)
+just run          # cargo run (with optional args: just run -- --help)
+just test         # cargo test
+just test-watch   # Watch mode for TDD (requires cargo-watch)
+just lint         # cargo fmt --check + clippy
+just fmt          # cargo fmt --all
+just doc          # cargo doc --open
+just clean        # cargo clean
+just nextest      # cargo nextest run (if you add nextest)
 ```
+
