@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use super::signature_algorithms::{
     SignatureAlgorithm, SignatureData, SignatureAlgorithmError,
-    verify_and_recover_with_algorithm
+    verify_and_recover_with_algorithm, recover_signer_with_algorithm
 };
 
 pub struct Address(pub String);
@@ -28,10 +28,19 @@ impl fmt::Debug for Address {
 #[derive(Error, Debug)]
 pub enum SignatureError {
     #[error("Signature algorithm error: {0}")]
-    AlgorithmError(#[from] SignatureAlgorithmError),
+    AlgorithmError(SignatureAlgorithmError),
     
     #[error("Signature verification failed: signer mismatch")]
     SignerMismatch,
+}
+
+impl From<SignatureAlgorithmError> for SignatureError {
+    fn from(err: SignatureAlgorithmError) -> Self {
+        match err {
+            SignatureAlgorithmError::SignerMismatch => SignatureError::SignerMismatch,
+            other => SignatureError::AlgorithmError(other),
+        }
+    }
 }
 
 /// Trait for types that contain sensitive data and should be hashed for display
@@ -141,15 +150,15 @@ pub struct SignedMessage {
 }
 
 impl SignedMessage {
-    /// Verifies that the signature is valid
+    /// Verifies that the signature is valid (recovers signer but doesn't verify against expected signer)
     pub fn verify(&self) -> Result<(), SignatureError> {
-        verify_and_recover_with_algorithm(&self.signature_data, &self.signature)?;
+        recover_signer_with_algorithm(&self.signature_data, &self.signature)?;
         Ok(())
     }
 
     /// Recovers the signer's address from the signature
     pub fn recover_signer(&self) -> Result<Address, SignatureError> {
-        Ok(verify_and_recover_with_algorithm(&self.signature_data, &self.signature)?)
+        Ok(recover_signer_with_algorithm(&self.signature_data, &self.signature)?)
     }
 
     /// Returns the algorithm used based on the signature data
@@ -160,30 +169,21 @@ impl SignedMessage {
         }
     }
 
-    /// Creates a new SignedMessage and verifies it matches the expected signer
+    /// Creates a new SignedMessage and verifies it matches the expected signer.
+    /// 
+    /// This is the only way to create a SignedMessage. The signature is always
+    /// verified to ensure it matches the expected signer address.
     pub fn new(
         signature_data: SignatureData,
         signature: Signature,
         expected_signer: &Address
     ) -> Result<Self, SignatureError> {
-        let recovered_signer = verify_and_recover_with_algorithm(&signature_data, &signature)?;
-        
-        if recovered_signer.0 != expected_signer.0 {
-            return Err(SignatureError::SignerMismatch);
-        }
+        verify_and_recover_with_algorithm(&signature_data, &signature, expected_signer)?;
         
         Ok(Self {
             signature_data,
             signature,
         })
-    }
-
-    /// Creates a SignedMessage without verification (used internally by WalletManager)
-    pub(crate) fn new_unchecked(signature_data: SignatureData, signature: Signature) -> Self {
-        Self {
-            signature_data,
-            signature,
-        }
     }
 }
 

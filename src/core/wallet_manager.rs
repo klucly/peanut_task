@@ -207,7 +207,11 @@ impl WalletManager {
         
         let signature_data = SignatureData::from_message(msg);
         
-        SignedMessage::new_unchecked(signature_data, signature)
+        // Verify the signature matches this wallet's address
+        // This should always succeed since we just signed it, but it ensures
+        // SignedMessage can only be created through verification
+        SignedMessage::new(signature_data, signature, &self.address())
+            .expect("Signature verification failed for message we just signed")
     }
     /// Signs typed data using EIP-712 standard.
     /// 
@@ -270,7 +274,11 @@ impl WalletManager {
         
         let signature_data = SignatureData::from_typed_data(typed_data);
         
-        Ok(SignedMessage::new_unchecked(signature_data, signature))
+        // Verify the signature matches this wallet's address
+        // This should always succeed since we just signed it, but it ensures
+        // SignedMessage can only be created through verification
+        SignedMessage::new(signature_data, signature, &self.address())
+            .map_err(|e| format!("Signature verification failed: {}", e))
     }
     pub fn sign_transaction(_tx: UnfinishedType) -> SignedTransaction {
         todo!()

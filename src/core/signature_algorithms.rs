@@ -28,6 +28,9 @@ pub enum SignatureAlgorithmError {
     
     #[error("Failed to sign: {0}")]
     SigningError(String),
+    
+    #[error("Signature verification failed: signer mismatch")]
+    SignerMismatch,
 }
 
 /// Enum representing different signature algorithms
@@ -267,7 +270,38 @@ pub fn sign_with_algorithm(
 }
 
 /// Verify signature and recover signer (runtime dispatch based on SignatureData)
+/// Verifies that the recovered signer matches the expected signer address
 pub fn verify_and_recover_with_algorithm(
+    data: &SignatureData,
+    signature: &Signature,
+    expected_signer: &Address,
+) -> Result<Address, SignatureAlgorithmError> {
+    let recovered_signer = match data {
+        SignatureData::Message(msg) => {
+            let hasher = Eip191Hasher;
+            hasher.verify_and_recover(msg, signature)?
+        }
+        SignatureData::TypedData { domain, types, value } => {
+            let hasher = Eip712Hasher;
+            let typed_data = TypedData {
+                domain: domain.clone(),
+                types: types.clone(),
+                value: value.clone(),
+            };
+            hasher.verify_and_recover(&typed_data, signature)?
+        }
+    };
+    
+    // Verify that the recovered signer matches the expected signer
+    if recovered_signer.0.to_lowercase() != expected_signer.0.to_lowercase() {
+        return Err(SignatureAlgorithmError::SignerMismatch);
+    }
+    
+    Ok(recovered_signer)
+}
+
+/// Recover signer address from signature without verification (runtime dispatch based on SignatureData)
+pub fn recover_signer_with_algorithm(
     data: &SignatureData,
     signature: &Signature,
 ) -> Result<Address, SignatureAlgorithmError> {
