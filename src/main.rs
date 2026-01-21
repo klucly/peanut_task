@@ -1,12 +1,8 @@
 use std::env;
-mod dependency;
+mod core;
 
 fn main() {
     dotenvy::dotenv().ok();
-
-    let secret_info = env::var("SECRET_INFO")
-        .expect(".env is not setup correctly. SECRET_INFO is required to run");
-
-    println!("Secret info: `{}`", secret_info);
-    println!("{}", dependency::imported_function());
+    let wallet_manager = core::wallet_manager::WalletManager::from_env("SECRET_KEY").unwrap();
+    println!("{:?}", wallet_manager);
 }

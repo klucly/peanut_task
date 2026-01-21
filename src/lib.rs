@@ -1,3 +1,6 @@
-pub mod dependency;
+pub mod core;
 
-pub use dependency::imported_function;
+// Re-export commonly used types for convenience
+pub use core::signature_algorithms::{
+    SignatureAlgorithm, SignatureData, TypedData, SignatureAlgorithmError
+};

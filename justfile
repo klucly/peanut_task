@@ -19,11 +19,17 @@ lint:
 build:
     cargo build --all-targets --all-features
 
-test:
-    cargo test --all-targets --all-features
+test *ARGS:
+    cargo test --all-targets --all-features {{ARGS}}
 
-test-watch:
-    cargo watch -x "test -- --nocapture"
+test-security *ARGS:
+    cargo test --test key_security_tests {{ARGS}}
+
+test-validity *ARGS:
+    cargo test --test key_validity_tests {{ARGS}}
+
+test-watch *ARGS:
+    cargo watch -x "test -- --nocapture {{ARGS}}"
 
 run *ARGS:
     cargo run -- {{ARGS}}
