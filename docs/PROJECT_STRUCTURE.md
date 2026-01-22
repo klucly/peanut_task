@@ -13,16 +13,19 @@ peanut_task/
 ├── src/
 │   ├── lib.rs              # Public API exports
 │   ├── main.rs             # Binary entry point (demo)
-│   └── core/               # Core implementation modules
+│   ├── core/               # Core implementation modules
+│   │   ├── mod.rs          # Module declarations
+│   │   ├── utility.rs      # Utility types (Address, Message, etc.)
+│   │   ├── signatures.rs   # Signature types (Signature, SignedMessage)
+│   │   ├── token_amount.rs # Token amount handling with precision
+│   │   ├── transaction_receipt.rs # Transaction receipt parsing
+│   │   ├── base_types.rs  # Re-exports from utility, signatures, token_amount, transaction_receipt
+│   │   ├── serializer.rs   # Canonical JSON serialization
+│   │   ├── signature_algorithms.rs # Signature algorithm implementations
+│   │   └── wallet_manager.rs # Wallet operations wrapper
+│   └── chain/              # Ethereum RPC client module
 │       ├── mod.rs          # Module declarations
-│       ├── utility.rs      # Utility types (Address, Message, etc.)
-│       ├── signatures.rs   # Signature types (Signature, SignedMessage)
-│       ├── token_amount.rs # Token amount handling with precision
-│       ├── transaction_receipt.rs # Transaction receipt parsing
-│       ├── base_types.rs  # Re-exports from utility, signatures, token_amount, transaction_receipt
-│       ├── serializer.rs   # Canonical JSON serialization
-│       ├── signature_algorithms.rs # Signature algorithm implementations
-│       └── wallet_manager.rs # Wallet operations wrapper
+│       └── chain_client.rs  # RPC client with reliability features
 ├── tests/                  # Integration tests
 ├── examples/               # Usage examples
 └── docs/                   # Documentation
@@ -268,6 +271,55 @@ Provides a unified interface for all signature algorithms:
 - Debug output shows key hash, not actual key
 - Signatures are automatically verified upon creation
 
+### 9. `chain/chain_client.rs` - Ethereum RPC Client
+
+**Purpose**: Provides a reliable Ethereum RPC client with automatic retry, fallback endpoints, and proper error handling.
+
+**Key Components**:
+
+- **`ChainClient`**: Ethereum RPC client with reliability features
+  - `rpc_urls`: List of RPC endpoint URLs (with fallback support)
+  - `timeout`: Request timeout in seconds
+  - `max_retries`: Maximum number of retries per request
+  - `new()`: Creates a new ChainClient with configuration
+  - `get_balance()`: Gets the balance of an address
+  - `get_nonce()`: Gets the nonce of an address
+  - `get_gas_price()`: Returns current gas price information
+  - `estimate_gas()`: Estimates gas required for a transaction
+  - `send_transaction()`: Sends a signed transaction (returns tx hash)
+  - `wait_for_receipt()`: Waits for transaction confirmation
+  - `get_transaction()`: Gets transaction information by hash
+  - `get_receipt()`: Gets transaction receipt by hash
+  - `call()`: Simulates a transaction without sending (eth_call)
+
+- **`GasPrice`**: Current gas price information
+  - `base_fee`: Base fee per gas (in wei)
+  - `priority_fee_low`: Low priority fee estimate (in wei)
+  - `priority_fee_medium`: Medium priority fee estimate (in wei)
+  - `priority_fee_high`: High priority fee estimate (in wei)
+  - `new()`: Creates a new GasPrice instance
+  - `get_max_fee()`: Calculates maxFeePerGas with buffer for base fee increase
+
+- **`ChainClientError`**: Error type for ChainClient operations
+  - `RpcError`: RPC request failed
+  - `NetworkError`: Network error occurred
+  - `TimeoutError`: Request timed out
+  - `InvalidResponse`: Invalid response from RPC
+  - `AllEndpointsFailed`: All RPC endpoints failed
+  - `TransactionNotFound`: Transaction not found
+  - `InvalidPriority`: Invalid priority level
+
+**Features**:
+- Automatic retry with exponential backoff
+- Multiple RPC endpoint fallback
+- Request timing/logging (to be implemented)
+- Proper error classification
+
+**Design Principles**:
+- Reliability through retry and fallback mechanisms
+- Clear error handling with descriptive error types
+- Type-safe operations using existing core types
+
 ## Module Interconnections
 
 ```
@@ -319,6 +371,14 @@ Provides a unified interface for all signature algorithms:
         │                    └──────────────────────┘
         │
         └────────────────────────────────────────────┐
+                                                     │
+                                    ┌────────────────▼────────────┐
+                                    │ chain/                      │
+                                    │                             │
+                                    │ - ChainClient               │
+                                    │ - GasPrice                  │
+                                    │ - RPC operations            │
+                                    └─────────────────────────────┘
                                                      │
                                     ┌────────────────▼────────────┐
                                     │ Tests & Examples            │
