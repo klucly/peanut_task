@@ -57,6 +57,21 @@ peanut_task/
 - **`Transaction`**: Ethereum transaction structure
   - Contains all transaction fields (nonce, gas, to, value, data, chain_id)
 
+- **`TokenAmount`**: Token amount representation with precision
+  - Stores raw amount in smallest unit (u128)
+  - Decimal precision (u8, e.g., 18 for ETH, 6 for USDC)
+  - Optional symbol (e.g., "ETH", "USDC")
+  - `new()`: Creates from raw amount
+  - `from_human()`: Creates from human-readable string (e.g., "1.5")
+  - `human()`: Returns human-readable decimal as string (preserves precision, no floating-point)
+  - `try_add()`: Adds two TokenAmounts, returns Result (validates same decimals)
+  - `try_mul()`: Multiplies by integer factor, returns Result
+  - `Add` trait: `+` operator for adding TokenAmounts (panics on error)
+  - `Mul` trait: `*` operator for multiplying by integers (panics on error)
+  - `Display` trait: Formats as "{human_readable} {symbol}" (e.g., "1.5 ETH")
+  - All operations use integer arithmetic and string formatting to avoid precision loss
+  - Error handling via `TokenAmountError` enum (DecimalMismatch, Overflow)
+
 **Security Features**:
 - `SecureHashable` trait prevents accidental key exposure in logs
 - Address validation ensures only valid addresses are used
@@ -335,6 +350,7 @@ The project includes comprehensive tests:
 - **`serializer_tests.rs`**: Tests canonical JSON serialization
 - **`signature_algorithm_tests.rs`**: Tests signature algorithm correctness
 - **`signature_verification_tests.rs`**: Tests signature verification
+- **`token_amount_tests.rs`**: Tests TokenAmount creation, parsing, formatting, and edge cases
 - **`transaction_address_validation_tests.rs`**: Tests transaction address validation
 
 ## Usage Patterns
