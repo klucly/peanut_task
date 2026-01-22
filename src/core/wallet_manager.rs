@@ -11,10 +11,11 @@ use k256::ecdsa::{SigningKey, VerifyingKey};
 use super::utility::{Address, Message, Transaction, SignedTransaction, TypedData};
 use super::signatures::SignedMessage;
 use super::signature_algorithms::{
-    SignatureData, 
+    SignatureData, SignatureAlgorithmError,
     Eip191Hasher, Eip712Hasher, TransactionHasher, SignatureHasher,
     derive_address_from_public_key, derive_public_key_from_private_key
 };
+use super::signatures::SignatureError;
 use serde_json::Value;
 
 /// Wrapper around a `SigningKey` that handles all key operations.
@@ -62,6 +63,12 @@ pub enum TransactionError {
 pub enum SigningError {
     #[error("Cannot sign empty message")]
     EmptyMessage,
+    
+    #[error("Signature algorithm error: {0}")]
+    AlgorithmError(#[from] SignatureAlgorithmError),
+    
+    #[error("Signature verification error: {0}")]
+    VerificationError(#[from] SignatureError),
 }
 
 
@@ -201,16 +208,15 @@ impl WalletManager {
         
         let signing_key = self.get_signing_key();
         
-        let signature = hasher.sign(signing_key, &msg)
-            .expect("Failed to sign message");
+        let signature = hasher.sign(signing_key, &msg)?;
         
         let signature_data = SignatureData::from_message(msg);
         
         // Verify the signature matches this wallet's address
         // This should always succeed since we just signed it, but it ensures
         // SignedMessage can only be created through verification
-        Ok(SignedMessage::new(signature_data, signature, &self.address())
-            .expect("Signature verification failed for message we just signed"))
+        SignedMessage::new(signature_data, signature, &self.address())
+            .map_err(SigningError::from)
     }
     /// Signs typed data using EIP-712 standard.
     /// 
