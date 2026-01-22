@@ -4,7 +4,7 @@
 //! It re-exports types from utility, signatures, and token_amount modules.
 
 pub use super::utility::{
-    Address, AddressError, PrivateKey, SecureHashable, Message, TypedData, Transaction, SignedTransaction
+    Address, AddressError, Message, TypedData, Transaction, SignedTransaction
 };
 
 pub use super::signatures::{

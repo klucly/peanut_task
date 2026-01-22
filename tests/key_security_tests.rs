@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use peanut_task::core::wallet_manager::WalletManager;
-    use peanut_task::core::utility::PrivateKey;
+    use k256::ecdsa::SigningKey;
 
     #[test]
     fn test_debug_does_not_expose_private_key() {
@@ -19,9 +19,13 @@ mod tests {
         assert!(debug_output.contains("WalletManager"), 
             "Debug output should contain struct name");
         
-        // Should contain "Hash" to indicate we're showing a hash
-        assert!(debug_output.contains("Hash"), 
-            "Debug output should indicate it's showing a hash");
+        // Should contain "SigningKey" to indicate the key type
+        assert!(debug_output.contains("SigningKey"), 
+            "Debug output should contain SigningKey type");
+        
+        // SigningKey from k256 uses { .. } to hide the key, which is secure
+        assert!(debug_output.contains(".."), 
+            "Debug output should use .. to hide key contents");
     }
 
     #[test]
@@ -38,8 +42,10 @@ mod tests {
     }
 
     #[test]
-    fn test_debug_output_differs_for_different_keys() {
-        // Test that different keys produce different debug outputs
+    fn test_debug_output_does_not_differ_for_different_keys() {
+        // Test that different keys produce the same debug output (secure behavior)
+        // This is correct - the Debug implementation should NOT expose the key,
+        // so different keys should show the same secure representation
         let test_key1 = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
         let test_key2 = "0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321";
         
@@ -49,7 +55,17 @@ mod tests {
         let debug1 = format!("{:?}", wallet1);
         let debug2 = format!("{:?}", wallet2);
         
-        assert_ne!(debug1, debug2, "Different private keys should produce different debug outputs");
+        // Both should show the same secure representation (SigningKey { .. })
+        // This is the correct secure behavior - we don't want to leak information
+        // about the key through debug output
+        assert_eq!(debug1, debug2, 
+            "Different private keys should produce the same secure debug output (no key leakage)");
+        
+        // Verify that neither contains the actual key bytes
+        assert!(!debug1.contains("1234567890abcdef"), 
+            "Debug output should not contain key bytes");
+        assert!(!debug2.contains("fedcba0987654321"), 
+            "Debug output should not contain key bytes");
     }
 
     #[test]
@@ -74,17 +90,18 @@ mod tests {
     }
 
     #[test]
-    fn test_private_key_debug_does_not_expose_key() {
-        // Test that PrivateKey Debug implementation doesn't expose the actual key
+    fn test_signing_key_debug_does_not_expose_key() {
+        // Test that SigningKey Debug implementation doesn't expose the actual key
         let key_bytes: [u8; 32] = [
             0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90,
             0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90,
             0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90,
             0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90,
         ];
-        let private_key = PrivateKey(key_bytes);
+        let signing_key = SigningKey::from_bytes((&key_bytes).into())
+            .expect("Valid test key");
         
-        let debug_output = format!("{:?}", private_key);
+        let debug_output = format!("{:?}", signing_key);
         
         // Convert key bytes to various string formats and verify NONE appear in debug output
         
@@ -112,11 +129,8 @@ mod tests {
         assert!(!debug_output.to_lowercase().contains("[171"), // 0xab
             "Debug output should not contain array notation: {}", debug_output);
         
-        // Should contain expected structure indicators
-        assert!(debug_output.contains("PrivateKey"), 
-            "Debug output should contain struct name");
-        assert!(debug_output.contains("Hash"), 
-            "Debug output should show hash of key");
+        // SigningKey from k256 has secure Debug that doesn't expose the key
+        // The exact format may vary, but it should not contain the actual key bytes
     }
 
     #[test]
@@ -142,9 +156,10 @@ mod tests {
             0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
             0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
         ];
-        let private_key = PrivateKey(key_bytes);
+        let signing_key = SigningKey::from_bytes((&key_bytes).into())
+            .expect("Valid test key");
         
-        let debug_output = format!("{:?}", private_key);
+        let debug_output = format!("{:?}", signing_key);
         
         // Should not show array representation
         assert!(!debug_output.contains("[0x"), 
@@ -158,8 +173,6 @@ mod tests {
         assert!(!debug_output.contains("1, 2, 3"), 
             "Should not show decimal sequential pattern: {}", debug_output);
         
-        // Should show hash instead
-        assert!(debug_output.contains("Hash"), 
-            "Should show hash");
+        // SigningKey from k256 has secure Debug that doesn't expose the key
     }
 }

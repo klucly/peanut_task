@@ -15,7 +15,7 @@ peanut_task/
 │   ├── main.rs             # Binary entry point (demo)
 │   └── core/               # Core implementation modules
 │       ├── mod.rs          # Module declarations
-│       ├── utility.rs      # Utility types (Address, PrivateKey, Message, etc.)
+│       ├── utility.rs      # Utility types (Address, Message, etc.)
 │       ├── signatures.rs   # Signature types (Signature, SignedMessage)
 │       ├── token_amount.rs # Token amount handling with precision
 │       ├── base_types.rs  # Re-exports from utility, signatures, token_amount
@@ -40,14 +40,6 @@ peanut_task/
   - Ensures addresses are properly formatted before use
   - Error type: `AddressError`
 
-- **`PrivateKey`**: Secure wrapper for 32-byte private keys
-  - Implements `SecureHashable` trait to prevent accidental logging
-  - Debug output shows hash instead of actual key bytes
-
-- **`SecureHashable`**: Trait for types containing sensitive data
-  - Provides secure hashing for debug output
-  - Prevents accidental exposure of sensitive material
-
 - **`Message`**: Simple string message for EIP-191 signing
 
 - **`TypedData`**: Structured data for EIP-712 signing
@@ -59,8 +51,8 @@ peanut_task/
 - **`SignedTransaction`**: Wrapper for signed transaction data
 
 **Security Features**:
-- `SecureHashable` trait prevents accidental key exposure in logs
 - Address validation ensures only valid addresses are used
+- Private keys use `k256::ecdsa::SigningKey` which has secure Debug implementation
 
 ### 2. `signatures.rs` - Signature Types
 
@@ -250,7 +242,7 @@ Provides a unified interface for all signature algorithms:
 │ token_amount   │            │ - Key loading   │
 │                │            │ - Signing ops   │
 │ - Address      │            │ - Address deriv │
-│ - PrivateKey   │            └───────┬─────────┘
+│                │            └───────┬─────────┘
 │ - Signature    │                    │
 │ - SignedMessage│                    │
 │ - Message      │                    │
@@ -293,7 +285,7 @@ Provides a unified interface for all signature algorithms:
 ```
 1. User creates Message("Hello")
 2. WalletManager.sign_message()
-   └─> Gets SigningKey from PrivateKey
+   └─> Uses SigningKey (from k256)
    └─> Eip191Hasher.sign()
        └─> Eip191Hasher.compute_hash()
            └─> Prefix: "\x19Ethereum Signed Message:\n" + len
@@ -327,7 +319,7 @@ Provides a unified interface for all signature algorithms:
 ### Address Derivation
 
 ```
-1. PrivateKey (32 bytes)
+1. SigningKey (from k256, wraps 32-byte private key)
 2. Derive public key (secp256k1)
    └─> SigningKey → VerifyingKey
 3. Get uncompressed public key (65 bytes: 0x04 + X + Y)
@@ -358,10 +350,6 @@ Provides a unified interface for all signature algorithms:
   - Address derivation
   - EIP-712 domain/message hashing
 
-### 3. SHA-256
-- **Purpose**: Secure hashing for debug output
-- **Library**: `sha2` crate
-- **Usage**: Hashing sensitive data for safe logging
 
 ### 4. Canonical JSON Serialization
 - **Purpose**: Deterministic JSON representation
@@ -374,8 +362,8 @@ Provides a unified interface for all signature algorithms:
 ## Security Features
 
 1. **Private Key Protection**:
-   - Keys wrapped in `PrivateKey` struct
-   - Debug output shows hash, not actual key
+   - Keys use `k256::ecdsa::SigningKey` which has secure Debug implementation
+   - Debug output doesn't expose actual key bytes
    - No direct key access outside `WalletManager`
 
 2. **Signature Verification**:
@@ -448,8 +436,7 @@ let signed_tx = wallet.sign_transaction(tx)?;
 
 ## Dependencies
 
-- **`k256`**: ECDSA/secp256k1 cryptography
-- **`sha2`**: SHA-256 hashing (for secure logging)
+- **`k256`**: ECDSA/secp256k1 cryptography (provides SigningKey with secure Debug)
 - **`sha3`**: Keccak-256 hashing (Ethereum standard)
 - **`serde`/`serde_json`**: JSON serialization
 - **`hex`**: Hex encoding/decoding

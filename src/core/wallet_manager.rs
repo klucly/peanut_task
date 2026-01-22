@@ -3,13 +3,12 @@
 //! All cryptographic operations are performed through `WalletManager`, ensuring
 //! the private key itself is never directly accessible or exposed.
 
-use core::str;
 use thiserror::Error;
-use std::{env::{self, VarError}, num::ParseIntError, fmt};
+use std::{env::{self, VarError}, fmt};
 use getrandom;
 use k256::ecdsa::{SigningKey, VerifyingKey};
 
-use super::utility::{Address, Message, Transaction, SignedTransaction, PrivateKey, TypedData};
+use super::utility::{Address, Message, Transaction, SignedTransaction, TypedData};
 use super::signatures::SignedMessage;
 use super::signature_algorithms::{
     SignatureData, 
@@ -18,13 +17,13 @@ use super::signature_algorithms::{
 };
 use serde_json::Value;
 
-/// Wrapper around a `PrivateKey` that handles all key operations.
+/// Wrapper around a `SigningKey` that handles all key operations.
 /// 
 /// This design ensures the private key is never directly exposed - all operations
 /// (signing, address derivation, etc.) are performed through this interface.
-/// The Debug implementation is safe for logging.
+/// The Debug implementation is safe for logging (SigningKey has secure Debug).
 pub struct WalletManager {
-    private_key: PrivateKey
+    private_key: SigningKey
 }
 
 impl fmt::Debug for WalletManager {
@@ -37,9 +36,6 @@ impl fmt::Debug for WalletManager {
 
 #[derive(Error, Debug)]
 pub enum KeyLoadError {
-    #[error("Couldn't parse a key: {0}")]
-    ParseHex(#[from] ParseIntError),
-
     #[error("Couldn't load a variable: {0}")]
     LoadVar(#[from] VarError),
 
@@ -64,25 +60,9 @@ pub enum TransactionError {
 
 
 impl WalletManager {
-    /// Validates that a private key is cryptographically valid for secp256k1.
-    /// 
-    /// A valid private key must:
-    /// - Not be zero
-    /// - Be less than the secp256k1 curve order
-    /// - Be able to generate a valid signing key
-    fn validate_private_key(key: &[u8; 32]) -> Result<(), KeyLoadError> {
-        // Attempt to create a signing key - this validates the key is in the valid range
-        SigningKey::from_bytes(key.into())
-            .map_err(|_| KeyLoadError::InvalidPrivateKey)?;
-        Ok(())
-    }
-
-    /// Gets the signing key from the private key.
-    /// 
-    /// This is a helper method to avoid repeating the conversion logic.
-    fn get_signing_key(&self) -> SigningKey {
-        SigningKey::from_bytes((&self.private_key.0).into())
-            .expect("Must have been validated when creating WalletManager")
+    /// Gets a reference to the signing key.
+    fn get_signing_key(&self) -> &SigningKey {
+        &self.private_key
     }
 
     /// Returns the public key (VerifyingKey) derived from the private key.
@@ -131,10 +111,10 @@ impl WalletManager {
             .map_err(|e| KeyLoadError::HexDecode(e.to_string()))?;
         let key: [u8; 32] = key_vec.try_into().map_err(|v: Vec<u8>| KeyLoadError::VecConversion(v.len()))?;
         
-        // Validate the key is cryptographically valid
-        Self::validate_private_key(&key)?;
+        // Create SigningKey directly - this validates the key is cryptographically valid
+        let private_key = SigningKey::from_bytes((&key).into())
+            .map_err(|_| KeyLoadError::InvalidPrivateKey)?;
         
-        let private_key = PrivateKey(key);
         Ok(WalletManager { private_key })
     }
     
@@ -143,18 +123,18 @@ impl WalletManager {
     /// Uses the system's random number generator via `getrandom`.
     /// The generated key is guaranteed to be valid for secp256k1.
     pub fn generate() -> Result<WalletManager, getrandom::Error> {
-        let mut raw_key = [0u8; 32];
-        
         // Generate random bytes until we get a valid key
         // In practice, the probability of generating an invalid key is negligible (~2^-128)
         loop {
+            let mut raw_key = [0u8; 32];
             getrandom::fill(&mut raw_key)?;
-            if Self::validate_private_key(&raw_key).is_ok() {
-                break;
+            
+            // Try to create SigningKey - this validates the key is cryptographically valid
+            if let Ok(private_key) = SigningKey::from_bytes((&raw_key).into()) {
+                return Ok(WalletManager { private_key });
             }
+            // If invalid, loop and try again
         }
-        
-        Ok(WalletManager { private_key: PrivateKey(raw_key) })
     }
     /// Derives the Ethereum address from the private key.
     /// 
@@ -205,7 +185,7 @@ impl WalletManager {
         
         let signing_key = self.get_signing_key();
         
-        let signature = hasher.sign(&signing_key, &msg)
+        let signature = hasher.sign(signing_key, &msg)
             .expect("Failed to sign message");
         
         let signature_data = SignatureData::from_message(msg);
@@ -271,7 +251,7 @@ impl WalletManager {
         
         let signing_key = self.get_signing_key();
         
-        let signature = hasher.sign(&signing_key, &typed_data)
+        let signature = hasher.sign(signing_key, &typed_data)
             .map_err(|e| format!("Failed to sign: {}", e))?;
         
         let signature_data = SignatureData::from_typed_data(typed_data);
@@ -320,7 +300,7 @@ impl WalletManager {
         
         let signing_key = self.get_signing_key();
         
-        let signature = hasher.sign(&signing_key, &tx)
+        let signature = hasher.sign(signing_key, &tx)
             .map_err(|e| TransactionError::InvalidAddress(
                 format!("Failed to sign transaction: {}", e)
             ))?;

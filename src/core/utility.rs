@@ -1,10 +1,9 @@
 //! Utility types and structures for wallet operations.
 //! 
-//! This module contains address validation, private key handling, and other
-//! utility types used throughout the wallet system.
+//! This module contains address validation and other utility types used
+//! throughout the wallet system.
 
 use std::fmt;
-use sha2::{Sha256, Digest};
 use thiserror::Error;
 
 /// Represents an Ethereum address with validation.
@@ -90,61 +89,6 @@ pub enum AddressError {
     
     #[error("Address must decode to exactly 20 bytes, got {0} bytes")]
     InvalidByteLength(usize),
-}
-
-/// Trait for types that contain sensitive data and should be hashed for display
-pub trait SecureHashable {
-    /// Returns the bytes to be hashed for secure display
-    fn as_bytes(&self) -> &[u8];
-    
-    /// Returns the name to use in Debug output
-    fn debug_name(&self) -> &'static str {
-        "SecureHashable"
-    }
-    
-    /// Computes a SHA-256 hash of the sensitive data
-    fn compute_hash(&self) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(self.as_bytes());
-        let hash = hasher.finalize();
-        format!("{:x}", hash)
-    }
-    
-    /// Returns a shortened hash for display purposes (first 16 hex chars)
-    fn short_hash(&self) -> String {
-        let hash = self.compute_hash();
-        hash[..16].to_string()
-    }
-    
-    /// Formats this value for Debug output
-    /// This provides a default Debug implementation for types implementing SecureHashable
-    fn fmt_debug(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple(self.debug_name())
-            .field(&format_args!("Hash({}...)", self.short_hash()))
-            .finish()
-    }
-}
-
-/// Wrapper around a 32-byte private key that prevents accidental exposure.
-/// 
-/// The Debug implementation shows only a truncated hash instead of the actual key bytes,
-/// protecting against accidental logging of sensitive material.
-pub struct PrivateKey(pub [u8; 32]);
-
-impl SecureHashable for PrivateKey {
-    fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-    
-    fn debug_name(&self) -> &'static str {
-        "PrivateKey"
-    }
-}
-
-impl fmt::Debug for PrivateKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.fmt_debug(f)
-    }
 }
 
 /// Represents a message to be signed.

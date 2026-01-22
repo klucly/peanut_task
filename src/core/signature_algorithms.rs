@@ -442,7 +442,14 @@ pub fn compute_hash_with_algorithm(
 /// ```
 /// # use k256::ecdsa::SigningKey;
 /// # use peanut_task::core::signature_algorithms::derive_public_key_from_private_key;
-/// let signing_key = SigningKey::random(&mut rand::thread_rng());
+/// // Create a test signing key from bytes (using a valid secp256k1 key)
+/// let key_bytes: [u8; 32] = [
+///     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+///     0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+///     0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+///     0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+/// ];
+/// let signing_key = SigningKey::from_bytes((&key_bytes).into()).unwrap();
 /// let public_key = derive_public_key_from_private_key(&signing_key);
 /// ```
 pub fn derive_public_key_from_private_key(signing_key: &SigningKey) -> VerifyingKey {
