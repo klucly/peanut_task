@@ -426,6 +426,28 @@ pub fn compute_hash_with_algorithm(
     }
 }
 
+/// Derives a public key (VerifyingKey) from a private key (SigningKey).
+/// 
+/// Takes a `SigningKey` (which represents a private key in k256) and derives
+/// the corresponding public key (`VerifyingKey`).
+/// 
+/// # Arguments
+/// * `signing_key` - The private key as a `SigningKey`
+/// 
+/// # Returns
+/// The corresponding public key as a `VerifyingKey`
+/// 
+/// # Examples
+/// ```
+/// # use k256::ecdsa::SigningKey;
+/// # use peanut_task::core::signature_algorithms::derive_public_key_from_private_key;
+/// let signing_key = SigningKey::random(&mut rand::thread_rng());
+/// let public_key = derive_public_key_from_private_key(&signing_key);
+/// ```
+pub fn derive_public_key_from_private_key(signing_key: &SigningKey) -> VerifyingKey {
+    *signing_key.verifying_key()
+}
+
 /// Derives an Ethereum address from a public key.
 /// 
 /// Takes a `VerifyingKey` (which is the public key type in k256) and derives

@@ -7,13 +7,13 @@ use core::str;
 use thiserror::Error;
 use std::{env::{self, VarError}, num::ParseIntError, fmt};
 use getrandom;
-use k256::ecdsa::SigningKey;
+use k256::ecdsa::{SigningKey, VerifyingKey};
 
 use super::basic_structs::{Address, Message, SignedMessage, Transaction, SignedTransaction, PrivateKey, TypedData};
 use super::signature_algorithms::{
     SignatureData, 
     Eip191Hasher, Eip712Hasher, TransactionHasher, SignatureHasher,
-    derive_address_from_public_key
+    derive_address_from_public_key, derive_public_key_from_private_key
 };
 use serde_json::Value;
 
@@ -74,6 +74,31 @@ impl WalletManager {
         SigningKey::from_bytes(key.into())
             .map_err(|_| KeyLoadError::InvalidPrivateKey)?;
         Ok(())
+    }
+
+    /// Gets the signing key from the private key.
+    /// 
+    /// This is a helper method to avoid repeating the conversion logic.
+    fn get_signing_key(&self) -> SigningKey {
+        SigningKey::from_bytes((&self.private_key.0).into())
+            .expect("Must have been validated when creating WalletManager")
+    }
+
+    /// Returns the public key (VerifyingKey) derived from the private key.
+    /// 
+    /// The public key is derived using secp256k1 elliptic curve cryptography.
+    /// 
+    /// # Examples
+    /// ```
+    /// # use peanut_task::core::wallet_manager::WalletManager;
+    /// let wallet = WalletManager::from_hex_string(
+    ///     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    /// ).unwrap();
+    /// let public_key = wallet.public_key();
+    /// ```
+    pub fn public_key(&self) -> VerifyingKey {
+        let signing_key = self.get_signing_key();
+        derive_public_key_from_private_key(&signing_key)
     }
 
 
@@ -149,15 +174,9 @@ impl WalletManager {
     /// let address = wallet.address();
     /// ```
     pub fn address(&self) -> Address {
-        // Create a signing key from the private key bytes
-        let signing_key = SigningKey::from_bytes((&self.private_key.0).into())
-            .expect("Must have been validated when creating WalletManager");
-        
-        // Get the verifying (public) key
-        let verifying_key = signing_key.verifying_key();
-        
-        // Derive address from public key (includes validation)
-        derive_address_from_public_key(&verifying_key)
+        // Get the public key and derive address from it (includes validation)
+        let public_key = self.public_key();
+        derive_address_from_public_key(&public_key)
     }
     /// Signs a message using Ethereum's personal message signing standard (EIP-191).
     /// 
@@ -183,8 +202,7 @@ impl WalletManager {
     pub fn sign_message(&self, msg: Message) -> SignedMessage {
         let hasher = Eip191Hasher;
         
-        let signing_key = SigningKey::from_bytes((&self.private_key.0).into())
-            .expect("Must have been validated when creating WalletManager");
+        let signing_key = self.get_signing_key();
         
         let signature = hasher.sign(&signing_key, &msg)
             .expect("Failed to sign message");
@@ -250,8 +268,7 @@ impl WalletManager {
         
         let hasher = Eip712Hasher;
         
-        let signing_key = SigningKey::from_bytes((&self.private_key.0).into())
-            .expect("Must have been validated when creating WalletManager");
+        let signing_key = self.get_signing_key();
         
         let signature = hasher.sign(&signing_key, &typed_data)
             .map_err(|e| format!("Failed to sign: {}", e))?;
@@ -300,8 +317,7 @@ impl WalletManager {
     pub fn sign_transaction(&self, tx: Transaction) -> Result<SignedTransaction, TransactionError> {
         let hasher = TransactionHasher;
         
-        let signing_key = SigningKey::from_bytes((&self.private_key.0).into())
-            .expect("Must have been validated when creating WalletManager");
+        let signing_key = self.get_signing_key();
         
         let signature = hasher.sign(&signing_key, &tx)
             .map_err(|e| TransactionError::InvalidAddress(
