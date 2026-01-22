@@ -169,7 +169,10 @@ impl TransactionReceipt {
                 .ok_or_else(|| TransactionReceiptError::InvalidFormat(
                     format!("Log at index {} missing 'address' field", idx)
                 ))?;
-            let address = Address(address_str.to_string());
+            let address = Address::from_string(address_str)
+                .map_err(|e| TransactionReceiptError::InvalidFormat(
+                    format!("Invalid address in log at index {}: {}", idx, e)
+                ))?;
 
             let topics_array = log_obj.get("topics")
                 .and_then(|v| v.as_array())

@@ -181,7 +181,9 @@ fn test_from_web3_with_logs() {
     assert_eq!(receipt.logs.len(), 1);
     
     let log = &receipt.logs[0];
-    assert_eq!(log.address.0, "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0");
+    // Addresses are case-insensitive, so compare case-insensitively
+    // The address will be automatically checksummed by Address::from_string
+    assert_eq!(log.address.lower(), "0x742d35cc6634c0532925a3b844bc9e7595f0beb0");
     assert_eq!(log.topics.len(), 3);
     assert_eq!(log.topics[0], "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef");
     assert_eq!(log.data, "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000");
@@ -211,8 +213,9 @@ fn test_from_web3_multiple_logs() {
     
     let receipt = TransactionReceipt::from_web3(receipt_json).unwrap();
     assert_eq!(receipt.logs.len(), 2);
-    assert_eq!(receipt.logs[0].address.0, "0x1111111111111111111111111111111111111111");
-    assert_eq!(receipt.logs[1].address.0, "0x2222222222222222222222222222222222222222");
+    // Addresses are case-insensitive, so compare case-insensitively
+    assert_eq!(receipt.logs[0].address.lower(), "0x1111111111111111111111111111111111111111");
+    assert_eq!(receipt.logs[1].address.lower(), "0x2222222222222222222222222222222222222222");
     assert_eq!(receipt.logs[0].topics.len(), 1);
     assert_eq!(receipt.logs[1].topics.len(), 2);
 }

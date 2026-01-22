@@ -242,37 +242,38 @@ pub struct TransactionHasher;
 impl TransactionHasher {
     /// Serializes a transaction to bytes for hashing.
     fn serialize_transaction(tx: &Transaction) -> Result<Vec<u8>, SignatureAlgorithmError> {
-        // Validate the address if present
-        if let Some(ref addr) = tx.to {
-            addr.validate()
-                .map_err(|e| SignatureAlgorithmError::HashError(e.to_string()))?;
-        }
+        // Validate the address
+        tx.to.validate()
+            .map_err(|e| SignatureAlgorithmError::HashError(e.to_string()))?;
         
         let mut bytes = Vec::new();
         
-        // Serialize nonce (8 bytes, big-endian)
-        bytes.extend_from_slice(&tx.nonce.to_be_bytes());
+        // Serialize nonce (8 bytes, big-endian, use 0 if None)
+        let nonce = tx.nonce.unwrap_or(0);
+        bytes.extend_from_slice(&nonce.to_be_bytes());
         
-        // Serialize gas_price (8 bytes, big-endian)
-        bytes.extend_from_slice(&tx.gas_price.to_be_bytes());
+        // Serialize max_fee_per_gas (8 bytes, big-endian, use 0 if None)
+        let max_fee_per_gas = tx.max_fee_per_gas.unwrap_or(0);
+        bytes.extend_from_slice(&max_fee_per_gas.to_be_bytes());
         
-        // Serialize gas_limit (8 bytes, big-endian)
-        bytes.extend_from_slice(&tx.gas_limit.to_be_bytes());
+        // Serialize max_priority_fee (8 bytes, big-endian, use 0 if None)
+        let max_priority_fee = tx.max_priority_fee.unwrap_or(0);
+        bytes.extend_from_slice(&max_priority_fee.to_be_bytes());
         
-        // Serialize to address (20 bytes if Some, 0 bytes if None)
-        if let Some(ref addr) = tx.to {
-            // Extract address bytes (skip "0x" prefix)
-            let addr_str = addr.0.strip_prefix("0x").unwrap_or(&addr.0);
-            let addr_bytes = hex::decode(addr_str)
-                .map_err(|e| SignatureAlgorithmError::HashError(
-                    format!("Failed to decode validated address: {}", e)
-                ))?;
-            
-            bytes.extend_from_slice(&addr_bytes);
-        }
+        // Serialize gas_limit (8 bytes, big-endian, use 0 if None)
+        let gas_limit = tx.gas_limit.unwrap_or(0);
+        bytes.extend_from_slice(&gas_limit.to_be_bytes());
         
-        // Serialize value (8 bytes, big-endian)
-        bytes.extend_from_slice(&tx.value.to_be_bytes());
+        // Serialize to address (20 bytes)
+        let addr_str = tx.to.value.strip_prefix("0x").unwrap_or(&tx.to.value);
+        let addr_bytes = hex::decode(addr_str)
+            .map_err(|e| SignatureAlgorithmError::HashError(
+                format!("Failed to decode validated address: {}", e)
+            ))?;
+        bytes.extend_from_slice(&addr_bytes);
+        
+        // Serialize value (use raw amount from TokenAmount, 16 bytes for u128)
+        bytes.extend_from_slice(&tx.value.raw.to_be_bytes());
         
         // Serialize data (length + data)
         bytes.extend_from_slice(&(tx.data.len() as u32).to_be_bytes());
@@ -377,7 +378,7 @@ pub fn verify_and_recover_with_algorithm(
     };
     
     // Verify that the recovered signer matches the expected signer
-    if recovered_signer.0.to_lowercase() != expected_signer.0.to_lowercase() {
+    if recovered_signer.lower() != expected_signer.lower() {
         return Err(SignatureAlgorithmError::SignerMismatch);
     }
     
@@ -477,13 +478,9 @@ pub fn derive_address_from_public_key(public_key: &VerifyingKey) -> Address {
     // Format as hex string with 0x prefix
     let address_hex = format!("0x{}", hex::encode(address_bytes));
     
-    let address = Address(address_hex);
-    
-    // Validate the derived address
+    // Create address with validation and checksumming
     // This should never fail for a properly derived address, but we validate for safety
-    address.validate()
-        .expect("Derived address failed validation - this indicates a bug in address derivation");
-    
-    address
+    Address::from_string(&address_hex)
+        .expect("Derived address failed validation - this indicates a bug in address derivation")
 }
 

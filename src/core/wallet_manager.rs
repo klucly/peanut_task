@@ -316,17 +316,19 @@ impl WalletManager {
     /// ```
     /// # use peanut_task::core::wallet_manager::WalletManager;
     /// # use peanut_task::core::utility::{Transaction, Address};
+    /// # use peanut_task::core::token_amount::TokenAmount;
     /// let wallet = WalletManager::from_hex_string(
     ///     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     /// ).unwrap();
     /// 
     /// let tx = Transaction {
-    ///     nonce: 0,
-    ///     gas_price: 20000000000,
-    ///     gas_limit: 21000,
-    ///     to: Some(Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string())),
-    ///     value: 1000000000000000000,
+    ///     to: Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string()),
+    ///     value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
     ///     data: vec![],
+    ///     nonce: Some(0),
+    ///     gas_limit: Some(21000),
+    ///     max_fee_per_gas: Some(20000000000),
+    ///     max_priority_fee: Some(1000000000),
     ///     chain_id: 1,
     /// };
     /// 
@@ -355,19 +357,27 @@ impl WalletManager {
         // In a production implementation, this would be RLP-encoded
         let mut parts = Vec::new();
         
-        parts.push(format!("\"nonce\":{}", tx.nonce));
-        parts.push(format!("\"gasPrice\":{}", tx.gas_price));
-        parts.push(format!("\"gasLimit\":{}", tx.gas_limit));
-        
-        if let Some(ref addr) = tx.to {
-            parts.push(format!("\"to\":\"{}\"", addr.0));
-        } else {
-            parts.push("\"to\":null".to_string());
-        }
-        
-        parts.push(format!("\"value\":{}", tx.value));
+        parts.push(format!("\"to\":\"{}\"", tx.to.value));
+        parts.push(format!("\"value\":\"0x{:x}\"", tx.value.raw));
         parts.push(format!("\"data\":\"0x{}\"", hex::encode(&tx.data)));
         parts.push(format!("\"chainId\":{}", tx.chain_id));
+        
+        if let Some(nonce) = tx.nonce {
+            parts.push(format!("\"nonce\":\"0x{:x}\"", nonce));
+        }
+        
+        if let Some(gas_limit) = tx.gas_limit {
+            parts.push(format!("\"gas\":\"0x{:x}\"", gas_limit));
+        }
+        
+        if let Some(max_fee_per_gas) = tx.max_fee_per_gas {
+            parts.push(format!("\"maxFeePerGas\":\"0x{:x}\"", max_fee_per_gas));
+        }
+        
+        if let Some(max_priority_fee) = tx.max_priority_fee {
+            parts.push(format!("\"maxPriorityFeePerGas\":\"0x{:x}\"", max_priority_fee));
+        }
+        
         parts.push(format!("\"v\":{}", v));
         parts.push(format!("\"r\":\"0x{}\"", hex::encode(&r)));
         parts.push(format!("\"s\":\"0x{}\"", hex::encode(&s)));

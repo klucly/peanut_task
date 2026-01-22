@@ -36,9 +36,14 @@ peanut_task/
 
 **Key Components**:
 
-- **`Address`**: Ethereum address wrapper with validation
-  - Validates format (0x prefix, 42 chars, 20 bytes)
-  - Ensures addresses are properly formatted before use
+- **`Address`**: Ethereum address wrapper with validation and checksumming
+  - `value`: The address string (stored in EIP-55 checksummed format)
+  - `from_string(s)`: Creates an Address from a string, validates and converts to checksum format (equivalent to Python `from_string` class method and `__post_init__`)
+  - `checksum()`: Returns the checksummed address (EIP-55 format, equivalent to Python `checksum` property)
+  - `lower()`: Returns the lowercase address (equivalent to Python `lower` property)
+  - `validate()`: Validates address format (0x prefix, 42 chars, 20 bytes)
+  - Implements case-insensitive equality comparison (equivalent to Python `__eq__`)
+  - Automatically converts addresses to EIP-55 checksummed format on creation
   - Error type: `AddressError`
 
 - **`Message`**: Simple string message for EIP-191 signing
@@ -46,8 +51,17 @@ peanut_task/
 - **`TypedData`**: Structured data for EIP-712 signing
   - Contains domain, types, and value (all as JSON)
 
-- **`Transaction`**: Ethereum transaction structure
-  - Contains all transaction fields (nonce, gas, to, value, data, chain_id)
+- **`Transaction`**: Ethereum transaction structure (ready to be signed)
+  - `to`: Recipient address (required, `Address`)
+  - `value`: Value to transfer (`TokenAmount`)
+  - `data`: Transaction data (bytes, `Vec<u8>`)
+  - `nonce`: Transaction nonce (optional, `Option<u64>`)
+  - `gas_limit`: Gas limit (optional, `Option<u64>`)
+  - `max_fee_per_gas`: Maximum fee per gas, EIP-1559 (optional, `Option<u64>`)
+  - `max_priority_fee`: Maximum priority fee per gas, EIP-1559 (optional, `Option<u64>`)
+  - `chain_id`: Chain ID for replay protection (defaults to 1, `u64`)
+  - `to_dict()`: Converts to web3-compatible dict (serde_json::Value)
+  - Implements `Default` trait with chain_id = 1
 
 - **`SignedTransaction`**: Wrapper for signed transaction data
 

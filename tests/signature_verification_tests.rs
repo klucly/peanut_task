@@ -49,9 +49,9 @@ mod tests {
         let message = Message("Hello, Ethereum!".to_string());
         
         // Use a dummy address for testing
-        let dummy_address = peanut_task::core::utility::Address(
-            "0x0000000000000000000000000000000000000000".to_string()
-        );
+        let dummy_address = peanut_task::core::utility::Address::from_string(
+            "0x0000000000000000000000000000000000000000"
+        ).unwrap();
         
         let zero_sig = Signature::new([0u8; 32], [0u8; 32], 27);
         let signature_data = SignatureData::from_message(message);

@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Recovered signer: {}", recovered_address);
     
     // Verify it matches the wallet address
-    if recovered_address.0 == wallet.address().0 {
+    if recovered_address.value == wallet.address().value {
         println!("✓ Recovered address matches wallet address");
     }
     
@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Recovered signer: {}", recovered_address_eip712);
     
     // Verify it matches the wallet address
-    if recovered_address_eip712.0 == wallet.address().0 {
+    if recovered_address_eip712.value == wallet.address().value {
         println!("✓ Recovered address matches wallet address");
     }
     

@@ -346,7 +346,20 @@ fn test_address_invalid_raises_clear_error() {
     ];
     
     for (addr_str, description) in invalid_addresses {
-        let addr = Address(addr_str.to_string());
+        // Try to create address - invalid addresses will fail
+        let result = Address::from_string(addr_str);
+        let addr = match result {
+            Ok(addr) => addr,
+            Err(e) => {
+                // Expected error for invalid addresses
+                let error_msg = e.to_string();
+                assert!(!error_msg.is_empty(), 
+                    "Error message should not be empty for '{}'", addr_str);
+                assert!(error_msg.len() > 10, 
+                    "Error message should be descriptive for '{}': {}", addr_str, error_msg);
+                continue;
+            }
+        };
         let result = addr.validate();
         
         assert!(result.is_err(), 
@@ -374,9 +387,9 @@ fn test_address_case_insensitive_equality() {
     // This test verifies that addresses with different cases are considered equivalent
     // when compared using case-insensitive comparison.
     
-    let addr_lower = Address("0x742d35cc6634c0532925a3b844bc9e7595f0beb0".to_string());
-    let addr_upper = Address("0x742D35CC6634C0532925A3B844BC9E7595F0BEB0".to_string());
-    let addr_mixed = Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string());
+    let addr_lower = Address::from_string("0x742d35cc6634c0532925a3b844bc9e7595f0beb0").unwrap();
+    let addr_upper = Address::from_string("0x742D35CC6634C0532925A3B844BC9E7595F0BEB0").unwrap();
+    let addr_mixed = Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap();
     
     // All should validate successfully
     assert!(addr_lower.validate().is_ok(), "Lowercase address should be valid");

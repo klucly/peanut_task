@@ -1,5 +1,6 @@
 use peanut_task::core::wallet_manager::{WalletManager, TransactionError};
 use peanut_task::core::utility::{Transaction, Address};
+use peanut_task::core::token_amount::TokenAmount;
 
 #[test]
 fn test_valid_address_passes_validation() {
@@ -8,12 +9,13 @@ fn test_valid_address_passes_validation() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string())),
-        value: 1000000000000000000,
+        to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap(),
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -24,23 +26,27 @@ fn test_valid_address_passes_validation() {
 
 #[test]
 fn test_none_address_passes_validation() {
+    // Note: According to the spec, `to` is required (not optional).
+    // Contract creation transactions would need a different approach.
+    // This test is kept but uses a zero address to represent contract creation.
     let wallet = WalletManager::from_hex_string(
         "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: None, // Contract creation transaction
-        value: 0,
+        to: Address::from_string("0x0000000000000000000000000000000000000000").unwrap(), // Zero address for contract creation
+        value: TokenAmount::new(0, 18, Some("ETH".to_string())),
         data: vec![0x60, 0x60, 0x60], // Some init code
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
     // Should not panic or return an error
     let result = wallet.sign_transaction(tx);
-    assert!(result.is_ok(), "None address (contract creation) should pass validation");
+    assert!(result.is_ok(), "Zero address (contract creation) should pass validation");
 }
 
 #[test]
@@ -50,12 +56,16 @@ fn test_address_missing_0x_prefix_fails() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string())), // Missing 0x
-        value: 1000000000000000000,
+        to: Address::from_string("742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap_or_else(|_| {
+            // This will fail validation, but we want to test the error case
+            Address { value: "742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string() }
+        }), // Missing 0x
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -77,12 +87,15 @@ fn test_address_too_short_fails() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb".to_string())), // 41 chars (too short)
-        value: 1000000000000000000,
+        to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb").unwrap_or_else(|_| {
+            Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb".to_string() }
+        }), // 41 chars (too short)
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -104,12 +117,15 @@ fn test_address_too_long_fails() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb00".to_string())), // 43 chars (too long)
-        value: 1000000000000000000,
+        to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb00").unwrap_or_else(|_| {
+            Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb00".to_string() }
+        }), // 43 chars (too long)
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -131,12 +147,15 @@ fn test_address_with_invalid_hex_characters_fails() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbG".to_string())), // Invalid 'G' character
-        value: 1000000000000000000,
+        to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbG").unwrap_or_else(|_| {
+            Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbG".to_string() }
+        }), // Invalid 'G' character
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -158,12 +177,15 @@ fn test_address_with_special_characters_fails() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb@".to_string())), // Invalid '@' character
-        value: 1000000000000000000,
+        to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb@").unwrap_or_else(|_| {
+            Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb@".to_string() }
+        }), // Invalid '@' character
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -179,12 +201,13 @@ fn test_address_with_uppercase_and_lowercase_hex_passes() {
 
     // Test with mixed case (valid hex)
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string())), // Mixed case is valid
-        value: 1000000000000000000,
+        to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap(), // Mixed case is valid
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -199,12 +222,13 @@ fn test_address_all_lowercase_passes() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0x742d35cc6634c0532925a3b844bc9e7595f0beb0".to_string())), // All lowercase
-        value: 1000000000000000000,
+        to: Address::from_string("0x742d35cc6634c0532925a3b844bc9e7595f0beb0").unwrap(), // All lowercase
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -219,12 +243,13 @@ fn test_address_all_uppercase_passes() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0x742D35CC6634C0532925A3B844BC9E7595F0BEB0".to_string())), // All uppercase
-        value: 1000000000000000000,
+        to: Address::from_string("0x742D35CC6634C0532925A3B844BC9E7595F0BEB0").unwrap(), // All uppercase
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -239,12 +264,15 @@ fn test_empty_address_fails() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("".to_string())), // Empty string
-        value: 1000000000000000000,
+        to: Address::from_string("").unwrap_or_else(|_| {
+            Address { value: "".to_string() }
+        }), // Empty string
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -259,12 +287,15 @@ fn test_address_with_only_0x_prefix_fails() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0x".to_string())), // Only prefix, no hex
-        value: 1000000000000000000,
+        to: Address::from_string("0x").unwrap_or_else(|_| {
+            Address { value: "0x".to_string() }
+        }), // Only prefix, no hex
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
@@ -280,12 +311,13 @@ fn test_well_known_address_passes() {
     ).unwrap();
 
     let tx = Transaction {
-        nonce: 0,
-        gas_price: 20000000000,
-        gas_limit: 21000,
-        to: Some(Address("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266".to_string())), // Hardhat/Anvil test address
-        value: 1000000000000000000,
+        to: Address::from_string("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266").unwrap(), // Hardhat/Anvil test address
+        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
         data: vec![],
+        nonce: Some(0),
+        gas_limit: Some(21000),
+        max_fee_per_gas: Some(20000000000),
+        max_priority_fee: Some(1000000000),
         chain_id: 1,
     };
 
