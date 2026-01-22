@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("--- EIP-191: Personal Message Signing ---\n");
     
     let message = Message("Hello, Ethereum!".to_string());
-    let signed_eip191 = wallet.sign_message(message);
+    let signed_eip191 = wallet.sign_message(message)?;
     
     if let Some(msg) = signed_eip191.signature_data.as_message() {
         println!("Message: {}", msg.0);
@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Create a new message and sign it
     let test_message = Message("Test message".to_string());
-    let test_signed = wallet.sign_message(test_message.clone());
+    let test_signed = wallet.sign_message(test_message.clone())?;
     
     // Manually verify by creating a new SignedMessage with verification
     let manually_verified = SignedMessage::new(

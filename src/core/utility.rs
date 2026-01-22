@@ -72,6 +72,15 @@ impl fmt::Debug for Address {
     }
 }
 
+impl PartialEq for Address {
+    /// Compares addresses case-insensitively, as Ethereum addresses are case-insensitive.
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_lowercase() == other.0.to_lowercase()
+    }
+}
+
+impl Eq for Address {}
+
 /// Errors that can occur during address validation
 #[derive(Error, Debug)]
 pub enum AddressError {

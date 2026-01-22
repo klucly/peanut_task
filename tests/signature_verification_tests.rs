@@ -15,7 +15,7 @@ mod tests {
         ).unwrap();
         
         let message = Message("Hello, Ethereum!".to_string());
-        let signed = wallet.sign_message(message);
+        let signed = wallet.sign_message(message).unwrap();
         
         // Verify that the signature is valid
         assert!(signed.verify().is_ok(), "Valid signature should be accepted");
@@ -29,7 +29,7 @@ mod tests {
         ).unwrap();
         
         let message = Message("Hello, Ethereum!".to_string());
-        let signed = wallet.sign_message(message);
+        let signed = wallet.sign_message(message).unwrap();
         
         // Try to create a SignedMessage with an invalid v value
         let invalid_sig = Signature::new(signed.signature.r, signed.signature.s, 26);
@@ -73,7 +73,7 @@ mod tests {
         ).unwrap();
         
         let message = Message("Hello, Ethereum!".to_string());
-        let signed = wallet.sign_message(message);
+        let signed = wallet.sign_message(message).unwrap();
         
         // The signature should have v = 27 or v = 28
         assert!(
@@ -99,7 +99,7 @@ mod tests {
         
         for msg_text in messages {
             let message = Message(msg_text.to_string());
-            let signed = wallet.sign_message(message);
+            let signed = wallet.sign_message(message).unwrap();
             
             assert!(
                 signed.verify().is_ok(),
@@ -117,7 +117,7 @@ mod tests {
         ).unwrap();
         
         let message = Message("Hello, Ethereum!".to_string());
-        let signed = wallet.sign_message(message);
+        let signed = wallet.sign_message(message).unwrap();
         
         // Try to swap r and s components
         let swapped_sig = Signature::new(signed.signature.s, signed.signature.r, signed.signature.v);
@@ -142,7 +142,7 @@ mod tests {
         
         // Sign a message with wallet1
         let message = Message("Hello, Ethereum!".to_string());
-        let signed = wallet1.sign_message(message);
+        let signed = wallet1.sign_message(message).unwrap();
         
         // Try to create a SignedMessage claiming it was signed by wallet2
         let result = SignedMessage::new(
@@ -162,14 +162,14 @@ mod tests {
         ).unwrap();
         
         let message = Message("Hello, Ethereum!".to_string());
-        let signed = wallet.sign_message(message);
+        let signed = wallet.sign_message(message).unwrap();
         
         // Verification should always succeed for a properly created SignedMessage
         assert!(signed.verify().is_ok(), "SignedMessage should always be verifiable");
         
         // Test that we can manually create a SignedMessage with valid signature
         let message2 = Message("Another test".to_string());
-        let signed2 = wallet.sign_message(message2);
+        let signed2 = wallet.sign_message(message2).unwrap();
         
         // Manually recreate it with the correct signer
         let manual = SignedMessage::new(

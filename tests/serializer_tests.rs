@@ -187,35 +187,33 @@ fn test_format_no_whitespace() {
 #[test]
 fn test_format_numbers_preserved() {
     // Verify numbers are serialized as-is without quotes
+    // Note: Floating point numbers are now rejected per spec
     let data = json!({
         "integer": 42,
         "negative": -123,
-        "float": 3.14159,
         "zero": 0,
         "large": 1234567890
     });
     let result = Serializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
-    // With keys sorted: float, integer, large, negative, zero
-    // Expected: {"float":3.14159,"integer":42,"large":1234567890,"negative":-123,"zero":0}
+    // With keys sorted: integer, large, negative, zero
+    // Expected: {"integer":42,"large":1234567890,"negative":-123,"zero":0}
     
     // Should not have quotes around numbers
     assert!(!result_str.contains("\"42\""));
     assert!(!result_str.contains("\"-123\""));
     assert!(!result_str.contains("\"1234567890\""));
-    assert!(!result_str.contains("\"3.14159\""));
     assert!(!result_str.contains("\"0\""));
     
     // Verify actual number formats are present
     assert!(result_str.contains("42"));
     assert!(result_str.contains("-123"));
-    assert!(result_str.contains("3.14159"));
     assert!(result_str.contains("1234567890"));
     assert!(result_str.contains(":0}"));  // zero is last, so ends with }
     
     // Verify the exact format
-    assert_eq!(result_str, r#"{"float":3.14159,"integer":42,"large":1234567890,"negative":-123,"zero":0}"#);
+    assert_eq!(result_str, r#"{"integer":42,"large":1234567890,"negative":-123,"zero":0}"#);
 }
 
 #[test]

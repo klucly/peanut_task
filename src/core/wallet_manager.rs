@@ -58,6 +58,12 @@ pub enum TransactionError {
     InvalidAddress(String),
 }
 
+#[derive(Error, Debug)]
+pub enum SigningError {
+    #[error("Cannot sign empty message")]
+    EmptyMessage,
+}
+
 
 impl WalletManager {
     /// Gets a reference to the signing key.
@@ -169,6 +175,10 @@ impl WalletManager {
     /// The SignedMessage is guaranteed to be 100% valid - the signature was created
     /// by this wallet and is cryptographically valid for the message.
     /// 
+    /// # Errors
+    /// Returns `Err(SigningError::EmptyMessage)` if the message is empty.
+    /// This validation occurs before any cryptographic operations.
+    /// 
     /// # Examples
     /// ```
     /// # use peanut_task::core::wallet_manager::WalletManager;
@@ -177,10 +187,16 @@ impl WalletManager {
     ///     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     /// ).unwrap();
     /// let message = Message("Hello, Ethereum!".to_string());
-    /// let signed = wallet.sign_message(message);
+    /// let signed = wallet.sign_message(message)?;
     /// println!("Signature: {}", signed.signature.to_hex());
+    /// # Ok::<(), peanut_task::core::wallet_manager::SigningError>(())
     /// ```
-    pub fn sign_message(&self, msg: Message) -> SignedMessage {
+    pub fn sign_message(&self, msg: Message) -> Result<SignedMessage, SigningError> {
+        // Validate message is not empty before any crypto operations
+        if msg.0.is_empty() {
+            return Err(SigningError::EmptyMessage);
+        }
+        
         let hasher = Eip191Hasher;
         
         let signing_key = self.get_signing_key();
@@ -193,8 +209,8 @@ impl WalletManager {
         // Verify the signature matches this wallet's address
         // This should always succeed since we just signed it, but it ensures
         // SignedMessage can only be created through verification
-        SignedMessage::new(signature_data, signature, &self.address())
-            .expect("Signature verification failed for message we just signed")
+        Ok(SignedMessage::new(signature_data, signature, &self.address())
+            .expect("Signature verification failed for message we just signed"))
     }
     /// Signs typed data using EIP-712 standard.
     /// 
@@ -245,6 +261,21 @@ impl WalletManager {
     /// let signed = wallet.sign_typed_data(domain, types, value).unwrap();
     /// ```
     pub fn sign_typed_data(&self, domain: Value, types: Value, value: Value) -> Result<SignedMessage, String> {
+        // Validate domain is an object before any crypto operations
+        if !domain.is_object() {
+            return Err(format!("Domain must be a JSON object, got: {}", domain));
+        }
+        
+        // Validate types is an object before any crypto operations
+        if !types.is_object() {
+            return Err(format!("Types must be a JSON object, got: {}", types));
+        }
+        
+        // Validate value is an object before any crypto operations
+        if !value.is_object() {
+            return Err(format!("Value must be a JSON object, got: {}", value));
+        }
+        
         let typed_data = TypedData::new(domain, types, value);
         
         let hasher = Eip712Hasher;

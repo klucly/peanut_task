@@ -15,6 +15,9 @@ pub enum SerializationError {
 
     #[error("Serialization produced different results across iterations")]
     NonDeterministic,
+    
+    #[error("Floating point numbers are not allowed in cryptographic serialization: {0}")]
+    FloatingPointNotAllowed(f64),
 }
 
 /// Provides deterministic, canonical JSON serialization for cryptographic operations.
@@ -52,8 +55,8 @@ impl Serializer {
     /// let bytes = Serializer::serialize(&data).unwrap();
     /// ```
     pub fn serialize(data: &Value) -> Result<Vec<u8>, SerializationError> {
-        // Canonicalize the JSON (sort keys recursively)
-        let canonical_value = Self::canonicalize_value(data.clone());
+        // Canonicalize the JSON (sort keys recursively, reject floats)
+        let canonical_value = Self::canonicalize_value(data.clone())?;
         
         // Serialize to compact JSON string
         let canonical_json = serde_json::to_string(&canonical_value)?;
@@ -191,7 +194,7 @@ impl Serializer {
     ///
     /// This ensures that two JSON objects with the same content but different
     /// key orders will produce identical canonical representations.
-    fn canonicalize_value(value: Value) -> Value {
+    fn canonicalize_value(value: Value) -> Result<Value, SerializationError> {
         match value {
             Value::Object(map) => {
                 // Create a new map with sorted keys
@@ -204,18 +207,33 @@ impl Serializer {
                 // Insert values in sorted order, recursively canonicalizing nested values
                 for key in keys {
                     if let Some(val) = map.get(&key) {
-                        sorted_map.insert(key, Self::canonicalize_value(val.clone()));
+                        sorted_map.insert(key, Self::canonicalize_value(val.clone())?);
                     }
                 }
                 
-                Value::Object(sorted_map)
+                Ok(Value::Object(sorted_map))
             }
             Value::Array(arr) => {
                 // Recursively canonicalize array elements
-                Value::Array(arr.into_iter().map(Self::canonicalize_value).collect())
+                let canonicalized: Result<Vec<Value>, SerializationError> = arr
+                    .into_iter()
+                    .map(|v| Self::canonicalize_value(v))
+                    .collect();
+                Ok(Value::Array(canonicalized?))
             }
-            // Primitive types are already canonical
-            other => other,
+            Value::Number(n) => {
+                // Reject floating point numbers - they are unsafe for cryptographic operations
+                // If the number is not representable as an integer (i64 or u64), it's a float
+                if !n.is_i64() && !n.is_u64() {
+                    // This is a floating point number
+                    let f = n.as_f64().unwrap_or(0.0);
+                    return Err(SerializationError::FloatingPointNotAllowed(f));
+                }
+                // Integer numbers are allowed
+                Ok(Value::Number(n))
+            }
+            // Other primitive types are already canonical
+            other => Ok(other),
         }
     }
 }

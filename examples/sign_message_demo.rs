@@ -11,7 +11,7 @@ fn main() {
     let message = Message("Hello, Ethereum!".to_string());
     
     // Sign the message
-    let signed = wallet.sign_message(message);
+    let signed = wallet.sign_message(message).expect("Failed to sign message");
     
     // Display the results
     println!("=== Signed Message ===");
