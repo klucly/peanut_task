@@ -12,6 +12,7 @@ use super::signature_algorithms::{
     verify_and_recover_with_algorithm, recover_signer_with_algorithm
 };
 
+#[derive(Clone)]
 pub struct Address(pub String);
 
 impl fmt::Display for Address {
@@ -243,7 +244,23 @@ impl TypedData {
     }
 }
 
-// TODO: Remove this once we get a working version
-pub struct UnfinishedType;
+/// Represents an Ethereum transaction to be signed.
+#[derive(Debug, Clone)]
+pub struct Transaction {
+    /// Transaction nonce
+    pub nonce: u64,
+    /// Gas price in wei
+    pub gas_price: u64,
+    /// Gas limit
+    pub gas_limit: u64,
+    /// Recipient address (None for contract creation)
+    pub to: Option<Address>,
+    /// Value to transfer in wei
+    pub value: u64,
+    /// Transaction data (contract call data or init code)
+    pub data: Vec<u8>,
+    /// Chain ID for replay protection
+    pub chain_id: u64,
+}
 
 pub struct SignedTransaction(pub String);
