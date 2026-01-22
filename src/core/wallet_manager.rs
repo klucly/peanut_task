@@ -10,9 +10,9 @@ use getrandom;
 use k256::ecdsa::SigningKey;
 use sha3::{Digest, Keccak256};
 
-use super::basic_structs::{Address, Message, SignedMessage, UnfinishedType, SignedTransaction, PrivateKey};
+use super::basic_structs::{Address, Message, SignedMessage, UnfinishedType, SignedTransaction, PrivateKey, TypedData};
 use super::signature_algorithms::{
-    SignatureData, TypedData, 
+    SignatureData, 
     Eip191Hasher, Eip712Hasher, SignatureHasher
 };
 use serde_json::Value;
@@ -48,23 +48,11 @@ pub enum KeyLoadError {
     #[error("Invalid key format: expected '0x' prefix")]
     MissingHexPrefix,
 
-    #[error("Invalid hex string: odd number of characters")]
-    OddLength,
+    #[error("Invalid hex string: {0}")]
+    HexDecode(String),
 
     #[error("Invalid private key: key is not valid for secp256k1 curve")]
     InvalidPrivateKey,
-}
-
-/// Converts a hex string (without 0x prefix) to bytes.
-/// Returns an error if the string has odd length or contains invalid hex characters.
-fn hex_to_vec(s: &str) -> Result<Vec<u8>, KeyLoadError> {
-    if s.len() % 2 != 0 {
-        return Err(KeyLoadError::OddLength);
-    }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(KeyLoadError::ParseHex))
-        .collect()
 }
 
 
@@ -106,7 +94,8 @@ impl WalletManager {
     pub fn from_hex_string(key_hex: &str) -> Result<WalletManager, KeyLoadError> {
         let hex_str = key_hex.strip_prefix("0x")
             .ok_or(KeyLoadError::MissingHexPrefix)?;
-        let key_vec = hex_to_vec(hex_str)?;
+        let key_vec = hex::decode(hex_str)
+            .map_err(|e| KeyLoadError::HexDecode(e.to_string()))?;
         let key: [u8; 32] = key_vec.try_into().map_err(|v: Vec<u8>| KeyLoadError::VecConversion(v.len()))?;
         
         // Validate the key is cryptographically valid

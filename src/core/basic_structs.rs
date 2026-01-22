@@ -5,6 +5,7 @@
 use std::fmt;
 use sha2::{Sha256, Digest};
 use thiserror::Error;
+use serde_json::Value;
 
 use super::signature_algorithms::{
     SignatureAlgorithm, SignatureData, SignatureAlgorithmError,
@@ -48,6 +49,11 @@ pub trait SecureHashable {
     /// Returns the bytes to be hashed for secure display
     fn as_bytes(&self) -> &[u8];
     
+    /// Returns the name to use in Debug output
+    fn debug_name(&self) -> &'static str {
+        "SecureHashable"
+    }
+    
     /// Computes a SHA-256 hash of the sensitive data
     fn compute_hash(&self) -> String {
         let mut hasher = Sha256::new();
@@ -61,6 +67,14 @@ pub trait SecureHashable {
         let hash = self.compute_hash();
         hash[..16].to_string()
     }
+    
+    /// Formats this value for Debug output
+    /// This provides a default Debug implementation for types implementing SecureHashable
+    fn fmt_debug(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple(self.debug_name())
+            .field(&format_args!("Hash({}...)", self.short_hash()))
+            .finish()
+    }
 }
 
 /// Wrapper around a 32-byte private key that prevents accidental exposure.
@@ -73,13 +87,15 @@ impl SecureHashable for PrivateKey {
     fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+    
+    fn debug_name(&self) -> &'static str {
+        "PrivateKey"
+    }
 }
 
 impl fmt::Debug for PrivateKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("PrivateKey")
-            .field(&format_args!("Hash({}...)", self.short_hash()))
-            .finish()
+        self.fmt_debug(f)
     }
 }
 
@@ -211,5 +227,21 @@ impl fmt::Display for SignedMessage {
 
 #[derive(Debug, Clone)]
 pub struct Message(pub String);
+
+/// Typed data structure for EIP-712
+#[derive(Debug, Clone)]
+pub struct TypedData {
+    pub domain: Value,
+    pub types: Value,
+    pub value: Value,
+}
+
+impl TypedData {
+    /// Creates a new TypedData instance
+    pub fn new(domain: Value, types: Value, value: Value) -> Self {
+        Self { domain, types, value }
+    }
+}
+
 pub struct UnfinishedType;
 pub struct SignedTransaction(pub String);

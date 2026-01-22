@@ -53,8 +53,8 @@ mod tests {
         let result = WalletManager::from_hex_string(invalid_hex);
         assert!(result.is_err(), "Invalid hex characters should fail");
         match result.unwrap_err() {
-            KeyLoadError::ParseHex(_) => {},
-            _ => panic!("Expected ParseHex error"),
+            KeyLoadError::HexDecode(_) => {},
+            _ => panic!("Expected HexDecode error"),
         }
     }
 
@@ -66,8 +66,8 @@ mod tests {
         let result = WalletManager::from_hex_string(odd_length_key);
         assert!(result.is_err(), "Odd-length hex string should fail");
         match result.unwrap_err() {
-            KeyLoadError::OddLength => {},
-            _ => panic!("Expected OddLength error"),
+            KeyLoadError::HexDecode(_) => {},
+            _ => panic!("Expected HexDecode error"),
         }
     }
 

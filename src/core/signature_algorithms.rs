@@ -8,7 +8,7 @@ use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey, VerifyingK
 use thiserror::Error;
 use serde_json::Value;
 
-use super::basic_structs::{Address, Signature, Message};
+use super::basic_structs::{Address, Signature, Message, TypedData};
 use super::serializer::Serializer;
 
 /// Errors that can occur during signature operations
@@ -43,21 +43,6 @@ pub enum SignatureAlgorithm {
     /// EIP-712: Typed structured data hashing and signing
     /// Uses prefix: "\x19\x01" + domain_separator_hash + struct_hash
     Eip712,
-}
-
-/// Typed data structure for EIP-712
-#[derive(Debug, Clone)]
-pub struct TypedData {
-    pub domain: Value,
-    pub types: Value,
-    pub value: Value,
-}
-
-impl TypedData {
-    /// Creates a new TypedData instance
-    pub fn new(domain: Value, types: Value, value: Value) -> Self {
-        Self { domain, types, value }
-    }
 }
 
 /// Trait for signature algorithm implementations with compile-time type safety
