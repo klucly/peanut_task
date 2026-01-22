@@ -15,6 +15,56 @@ use super::signature_algorithms::{
 #[derive(Clone)]
 pub struct Address(pub String);
 
+impl Address {
+    /// Validates that the address has the correct Ethereum address format.
+    /// 
+    /// A valid address must:
+    /// - Start with "0x" prefix
+    /// - Be exactly 42 characters long (0x + 40 hex characters)
+    /// - Contain only valid hexadecimal characters after the prefix
+    /// - Decode to exactly 20 bytes
+    /// 
+    /// # Returns
+    /// - `Ok(())` if the address is valid
+    /// - `Err(AddressError)` if the address is invalid
+    /// 
+    /// # Examples
+    /// ```
+    /// # use peanut_task::core::basic_structs::Address;
+    /// let addr = Address("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string());
+    /// assert!(addr.validate().is_ok());
+    /// ```
+    pub fn validate(&self) -> Result<(), AddressError> {
+        let addr_str = &self.0;
+        
+        // Check for 0x prefix
+        if !addr_str.starts_with("0x") {
+            return Err(AddressError::MissingPrefix(addr_str.clone()));
+        }
+        
+        // Check length (0x + 40 hex chars = 42 total)
+        if addr_str.len() != 42 {
+            return Err(AddressError::InvalidLength(addr_str.len(), addr_str.clone()));
+        }
+        
+        // Check that all characters after 0x are valid hex digits
+        let hex_part = &addr_str[2..];
+        if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(AddressError::InvalidHexCharacters(addr_str.clone()));
+        }
+        
+        // Decode and verify it's exactly 20 bytes
+        let addr_bytes = hex::decode(hex_part)
+            .map_err(|e| AddressError::HexDecodeError(e.to_string()))?;
+        
+        if addr_bytes.len() != 20 {
+            return Err(AddressError::InvalidByteLength(addr_bytes.len()));
+        }
+        
+        Ok(())
+    }
+}
+
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -43,6 +93,25 @@ impl From<SignatureAlgorithmError> for SignatureError {
             other => SignatureError::AlgorithmError(other),
         }
     }
+}
+
+/// Errors that can occur during address validation
+#[derive(Error, Debug)]
+pub enum AddressError {
+    #[error("Address must start with '0x', got: {0}")]
+    MissingPrefix(String),
+    
+    #[error("Address must be 42 characters (0x + 40 hex chars), got {0} characters: {1}")]
+    InvalidLength(usize, String),
+    
+    #[error("Address contains invalid hex characters: {0}")]
+    InvalidHexCharacters(String),
+    
+    #[error("Failed to decode address hex: {0}")]
+    HexDecodeError(String),
+    
+    #[error("Address must decode to exactly 20 bytes, got {0} bytes")]
+    InvalidByteLength(usize),
 }
 
 /// Trait for types that contain sensitive data and should be hashed for display

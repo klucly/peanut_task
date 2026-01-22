@@ -8,7 +8,7 @@ use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey, VerifyingK
 use thiserror::Error;
 use serde_json::Value;
 
-use super::basic_structs::{Address, Signature, Message, TypedData};
+use super::basic_structs::{Address, Signature, Message, TypedData, Transaction, AddressError};
 use super::serializer::Serializer;
 
 /// Errors that can occur during signature operations
@@ -229,6 +229,104 @@ impl SignatureHasher for Eip712Hasher {
         let mut hash_array = [0u8; 32];
         hash_array.copy_from_slice(&final_hash);
         Ok(hash_array)
+    }
+}
+
+/// Transaction hasher implementation - uses Transaction
+/// 
+/// This hasher serializes transactions and hashes them with Keccak-256.
+/// The signature uses EIP-155 encoding where v = chain_id * 2 + 35 + recovery_id.
+pub struct TransactionHasher;
+
+impl TransactionHasher {
+    /// Serializes a transaction to bytes for hashing.
+    fn serialize_transaction(tx: &Transaction) -> Result<Vec<u8>, SignatureAlgorithmError> {
+        // Validate the address if present
+        if let Some(ref addr) = tx.to {
+            addr.validate()
+                .map_err(|e| SignatureAlgorithmError::HashError(e.to_string()))?;
+        }
+        
+        let mut bytes = Vec::new();
+        
+        // Serialize nonce (8 bytes, big-endian)
+        bytes.extend_from_slice(&tx.nonce.to_be_bytes());
+        
+        // Serialize gas_price (8 bytes, big-endian)
+        bytes.extend_from_slice(&tx.gas_price.to_be_bytes());
+        
+        // Serialize gas_limit (8 bytes, big-endian)
+        bytes.extend_from_slice(&tx.gas_limit.to_be_bytes());
+        
+        // Serialize to address (20 bytes if Some, 0 bytes if None)
+        if let Some(ref addr) = tx.to {
+            // Extract address bytes (skip "0x" prefix)
+            let addr_str = addr.0.strip_prefix("0x").unwrap_or(&addr.0);
+            let addr_bytes = hex::decode(addr_str)
+                .map_err(|e| SignatureAlgorithmError::HashError(
+                    format!("Failed to decode validated address: {}", e)
+                ))?;
+            
+            bytes.extend_from_slice(&addr_bytes);
+        }
+        
+        // Serialize value (8 bytes, big-endian)
+        bytes.extend_from_slice(&tx.value.to_be_bytes());
+        
+        // Serialize data (length + data)
+        bytes.extend_from_slice(&(tx.data.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&tx.data);
+        
+        // Serialize chain_id (8 bytes, big-endian)
+        bytes.extend_from_slice(&tx.chain_id.to_be_bytes());
+        
+        Ok(bytes)
+    }
+}
+
+impl SignatureHasher for TransactionHasher {
+    type Data = Transaction;
+    
+    fn compute_hash(&self, tx: &Transaction) -> Result<[u8; 32], SignatureAlgorithmError> {
+        // Serialize transaction for hashing
+        let tx_bytes = Self::serialize_transaction(tx)?;
+        
+        // Hash the transaction bytes with Keccak-256
+        let mut hasher = Keccak256::new();
+        hasher.update(&tx_bytes);
+        let hash = hasher.finalize();
+        
+        let mut hash_array = [0u8; 32];
+        hash_array.copy_from_slice(&hash);
+        Ok(hash_array)
+    }
+    
+    /// Signs the transaction using EIP-155 encoding.
+    /// 
+    /// For transactions, v = chain_id * 2 + 35 + recovery_id (EIP-155)
+    /// instead of the standard v = 27 + recovery_id.
+    fn sign(&self, signing_key: &SigningKey, tx: &Transaction) -> Result<Signature, SignatureAlgorithmError> {
+        // Compute the hash
+        let hash = self.compute_hash(tx)?;
+        
+        // Sign with recovery id
+        let (signature, recovery_id) = signing_key
+            .sign_prehash_recoverable(&hash)
+            .map_err(|e| SignatureAlgorithmError::SigningError(e.to_string()))?;
+        
+        // Get the signature bytes (r, s components)
+        let sig_bytes = signature.to_bytes();
+        
+        // Extract r and s components (each 32 bytes)
+        let mut r = [0u8; 32];
+        let mut s = [0u8; 32];
+        r.copy_from_slice(&sig_bytes[0..32]);
+        s.copy_from_slice(&sig_bytes[32..64]);
+        
+        // v is chain_id * 2 + 35 + recovery_id for EIP-155 transactions
+        let v = (tx.chain_id * 2 + 35 + recovery_id.to_byte() as u64) as u8;
+        
+        Ok(Signature::new(r, s, v))
     }
 }
 
