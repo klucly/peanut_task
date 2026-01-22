@@ -8,12 +8,12 @@ use thiserror::Error;
 use std::{env::{self, VarError}, num::ParseIntError, fmt};
 use getrandom;
 use k256::ecdsa::SigningKey;
-use sha3::{Digest, Keccak256};
 
 use super::basic_structs::{Address, Message, SignedMessage, Transaction, SignedTransaction, PrivateKey, TypedData};
 use super::signature_algorithms::{
     SignatureData, 
-    Eip191Hasher, Eip712Hasher, TransactionHasher, SignatureHasher
+    Eip191Hasher, Eip712Hasher, TransactionHasher, SignatureHasher,
+    derive_address_from_public_key
 };
 use serde_json::Value;
 
@@ -138,6 +138,8 @@ impl WalletManager {
     /// 3. Taking the last 20 bytes of the hash
     /// 4. Formatting as a hex string with '0x' prefix
     /// 
+    /// Address validation is performed automatically by `derive_address_from_public_key`.
+    /// 
     /// # Examples
     /// ```
     /// # use peanut_task::core::wallet_manager::WalletManager;
@@ -154,22 +156,8 @@ impl WalletManager {
         // Get the verifying (public) key
         let verifying_key = signing_key.verifying_key();
         
-        // Get the uncompressed public key bytes (65 bytes: 0x04 + X + Y coordinates)
-        let public_key_bytes = verifying_key.to_encoded_point(false);
-        
-        // Skip the first byte (0x04 prefix) and hash the remaining 64 bytes with Keccak-256
-        let public_key_slice = &public_key_bytes.as_bytes()[1..];
-        let mut hasher = Keccak256::new();
-        hasher.update(public_key_slice);
-        let hash = hasher.finalize();
-        
-        // Take the last 20 bytes of the hash
-        let address_bytes = &hash[12..];
-        
-        // Format as hex string with 0x prefix
-        let address_hex = format!("0x{}", hex::encode(address_bytes));
-        
-        Address(address_hex)
+        // Derive address from public key (includes validation)
+        derive_address_from_public_key(&verifying_key)
     }
     /// Signs a message using Ethereum's personal message signing standard (EIP-191).
     /// 

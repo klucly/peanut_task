@@ -8,7 +8,7 @@ use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey, VerifyingK
 use thiserror::Error;
 use serde_json::Value;
 
-use super::basic_structs::{Address, Signature, Message, TypedData, Transaction, AddressError};
+use super::basic_structs::{Address, Signature, Message, TypedData, Transaction};
 use super::serializer::Serializer;
 
 /// Errors that can occur during signature operations
@@ -426,10 +426,14 @@ pub fn compute_hash_with_algorithm(
     }
 }
 
-/// Derives an Ethereum address from a public key
-fn derive_address_from_public_key(verifying_key: &VerifyingKey) -> Address {
+/// Derives an Ethereum address from a public key.
+/// 
+/// Takes a `VerifyingKey` (which is the public key type in k256) and derives
+/// the Ethereum address by hashing the public key with Keccak-256 and taking
+/// the last 20 bytes.
+pub fn derive_address_from_public_key(public_key: &VerifyingKey) -> Address {
     // Get the uncompressed public key bytes (65 bytes: 0x04 + X + Y coordinates)
-    let public_key_bytes = verifying_key.to_encoded_point(false);
+    let public_key_bytes = public_key.to_encoded_point(false);
     
     // Skip the first byte (0x04 prefix) and hash the remaining 64 bytes with Keccak-256
     let public_key_slice = &public_key_bytes.as_bytes()[1..];
@@ -443,6 +447,13 @@ fn derive_address_from_public_key(verifying_key: &VerifyingKey) -> Address {
     // Format as hex string with 0x prefix
     let address_hex = format!("0x{}", hex::encode(address_bytes));
     
-    Address(address_hex)
+    let address = Address(address_hex);
+    
+    // Validate the derived address
+    // This should never fail for a properly derived address, but we validate for safety
+    address.validate()
+        .expect("Derived address failed validation - this indicates a bug in address derivation");
+    
+    address
 }
 
