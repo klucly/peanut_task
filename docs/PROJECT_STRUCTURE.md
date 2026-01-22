@@ -18,7 +18,8 @@ peanut_task/
 │       ├── utility.rs      # Utility types (Address, Message, etc.)
 │       ├── signatures.rs   # Signature types (Signature, SignedMessage)
 │       ├── token_amount.rs # Token amount handling with precision
-│       ├── base_types.rs  # Re-exports from utility, signatures, token_amount
+│       ├── transaction_receipt.rs # Transaction receipt parsing
+│       ├── base_types.rs  # Re-exports from utility, signatures, token_amount, transaction_receipt
 │       ├── serializer.rs   # Canonical JSON serialization
 │       ├── signature_algorithms.rs # Signature algorithm implementations
 │       └── wallet_manager.rs # Wallet operations wrapper
@@ -112,9 +113,36 @@ peanut_task/
 - Integer-based calculations with string formatting
 - Type-safe operations with clear error handling
 
-### 4. `base_types.rs` - Base Types Re-exports
+### 4. `transaction_receipt.rs` - Transaction Receipt Parsing
 
-**Purpose**: Convenience module that re-exports all base types from utility, signatures, and token_amount modules.
+**Purpose**: Provides parsing of Ethereum transaction receipts from web3 format, including transaction fees calculation and log parsing.
+
+**Key Components**:
+
+- **`TransactionReceipt`**: Parsed transaction receipt
+  - Contains transaction hash, block number, status, gas information, and logs
+  - `tx_fee()`: Returns transaction fee as `TokenAmount` (gas_used * effective_gas_price)
+  - `from_web3()`: Parses from web3 receipt dict (serde_json::Value)
+  - Supports both hex string and numeric formats for numeric fields
+  - Handles status as hex string ("0x1"/"0x0") or number (1/0)
+
+- **`Log`**: Ethereum transaction log entry
+  - Contains address, topics, and data fields
+  - Used within `TransactionReceipt` to represent event logs
+  - Supports parsing from web3 log format
+
+- **`TransactionReceiptError`**: Error type for transaction receipt parsing
+  - `MissingField`: When a required field is missing
+  - `InvalidFormat`: When a field has invalid format or type
+
+**Design Principles**:
+- Flexible parsing supporting both hex strings and numbers
+- Comprehensive error handling with clear error messages
+- Type-safe receipt representation
+
+### 5. `base_types.rs` - Base Types Re-exports
+
+**Purpose**: Convenience module that re-exports all base types from utility, signatures, token_amount, and transaction_receipt modules.
 
 **Usage**: Provides a single import point for all core types:
 ```rust
@@ -123,7 +151,7 @@ use peanut_task::core::base_types::*;
 
 This allows importing all types from one location while maintaining the modular structure.
 
-### 5. `serializer.rs` - Canonical JSON Serialization
+### 6. `serializer.rs` - Canonical JSON Serialization
 
 **Purpose**: Provides deterministic JSON serialization for cryptographic operations.
 
@@ -147,7 +175,7 @@ This allows importing all types from one location while maintaining the modular 
 
 **Usage**: Critical for EIP-712 where domain, types, and value must be hashed deterministically.
 
-### 6. `signature_algorithms.rs` - Signature Algorithm Implementations
+### 7. `signature_algorithms.rs` - Signature Algorithm Implementations
 
 **Purpose**: Implements Ethereum signature standards with compile-time type safety.
 
@@ -199,7 +227,7 @@ Provides a unified interface for all signature algorithms:
 - `recover_signer_with_algorithm()`: Recovers signer without verification
 - `compute_hash_with_algorithm()`: Computes hash based on data type
 
-### 7. `wallet_manager.rs` - Wallet Operations Wrapper
+### 8. `wallet_manager.rs` - Wallet Operations Wrapper
 
 **Purpose**: High-level interface for wallet operations that prevents direct key access.
 
@@ -240,16 +268,25 @@ Provides a unified interface for all signature algorithms:
 │ utility        │            │ wallet_manager  │
 │ signatures     │◀──────────│                 │
 │ token_amount   │            │ - Key loading   │
-│                │            │ - Signing ops   │
-│ - Address      │            │ - Address deriv │
+│ transaction_   │            │ - Signing ops   │
+│   receipt      │            │ - Address deriv │
 │                │            └───────┬─────────┘
+│ - Address      │                    │
+│                │                    │
 │ - Signature    │                    │
 │ - SignedMessage│                    │
 │ - Message      │                    │
 │ - TypedData    │                    │
 │ - Transaction  │                    │
 │ - TokenAmount  │                    │
+│ - Transaction  │                    │
+│   Receipt      │                    │
+│ - Log          │                    │
 └───────┬────────┘                    │
+        │                             │
+        │  (transaction_receipt uses  │
+        │   utility::Address and      │
+        │   token_amount::TokenAmount)│
         │                             │
         │                    ┌────────▼─────────────┐
         │                    │ signature_algorithms │
