@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use peanut_task::core::wallet_manager::WalletManager;
-    use peanut_task::core::basic_structs::PrivateKey;
+    use peanut_task::core::utility::PrivateKey;
 
     #[test]
     fn test_debug_does_not_expose_private_key() {

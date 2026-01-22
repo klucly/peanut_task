@@ -2,7 +2,7 @@ use peanut_task::core::signature_algorithms::{
     Eip191Hasher, Eip712Hasher, SignatureHasher, SignatureData,
     compute_hash_with_algorithm
 };
-use peanut_task::core::basic_structs::{Message, TypedData};
+use peanut_task::core::utility::{Message, TypedData};
 use serde_json::json;
 
 #[test]

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use peanut_task::core::basic_structs::TokenAmount;
+    use peanut_task::core::token_amount::TokenAmount;
 
     // ========== Tests for `new()` ==========
 
@@ -454,7 +454,7 @@ mod tests {
         let result = a.try_add(&b);
         assert!(result.is_err());
         match result.unwrap_err() {
-            peanut_task::core::basic_structs::TokenAmountError::DecimalMismatch(dec1, dec2) => {
+            peanut_task::core::token_amount::TokenAmountError::DecimalMismatch(dec1, dec2) => {
                 assert_eq!(dec1, 18);
                 assert_eq!(dec2, 6);
             }
@@ -529,7 +529,7 @@ mod tests {
         let result = amount.try_mul(2u128);
         assert!(result.is_err());
         match result.unwrap_err() {
-            peanut_task::core::basic_structs::TokenAmountError::Overflow => {},
+            peanut_task::core::token_amount::TokenAmountError::Overflow => {},
             _ => panic!("Expected Overflow error"),
         }
     }

@@ -8,7 +8,8 @@ use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey, VerifyingK
 use thiserror::Error;
 use serde_json::Value;
 
-use super::basic_structs::{Address, Signature, Message, TypedData, Transaction};
+use super::utility::{Address, Message, TypedData, Transaction};
+use super::signatures::Signature;
 use super::serializer::Serializer;
 
 /// Errors that can occur during signature operations

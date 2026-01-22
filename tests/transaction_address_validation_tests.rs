@@ -1,5 +1,5 @@
 use peanut_task::core::wallet_manager::{WalletManager, TransactionError};
-use peanut_task::core::basic_structs::{Transaction, Address};
+use peanut_task::core::utility::{Transaction, Address};
 
 #[test]
 fn test_valid_address_passes_validation() {

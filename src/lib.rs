@@ -4,4 +4,4 @@ pub mod core;
 pub use core::signature_algorithms::{
     SignatureAlgorithm, SignatureData, SignatureAlgorithmError
 };
-pub use core::basic_structs::TypedData;
+pub use core::utility::TypedData;

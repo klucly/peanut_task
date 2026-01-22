@@ -1,5 +1,6 @@
 use peanut_task::core::wallet_manager::WalletManager;
-use peanut_task::core::basic_structs::{Message, SignedMessage};
+use peanut_task::core::utility::Message;
+use peanut_task::core::signatures::SignedMessage;
 use peanut_task::SignatureAlgorithm;
 use serde_json::json;
 

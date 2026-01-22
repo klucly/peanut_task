@@ -1,5 +1,5 @@
 use peanut_task::core::wallet_manager::WalletManager;
-use peanut_task::core::basic_structs::Message;
+use peanut_task::core::utility::Message;
 
 fn main() {
     // Create a wallet from a hex string

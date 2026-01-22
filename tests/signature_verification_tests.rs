@@ -1,5 +1,6 @@
 use peanut_task::core::wallet_manager::WalletManager;
-use peanut_task::core::basic_structs::{Message, Signature, SignedMessage};
+use peanut_task::core::utility::Message;
+use peanut_task::core::signatures::{Signature, SignedMessage};
 use peanut_task::core::signature_algorithms::{SignatureAlgorithm, SignatureData};
 
 #[cfg(test)]
@@ -48,7 +49,7 @@ mod tests {
         let message = Message("Hello, Ethereum!".to_string());
         
         // Use a dummy address for testing
-        let dummy_address = peanut_task::core::basic_structs::Address(
+        let dummy_address = peanut_task::core::utility::Address(
             "0x0000000000000000000000000000000000000000".to_string()
         );
         

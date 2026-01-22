@@ -9,7 +9,8 @@ use std::{env::{self, VarError}, num::ParseIntError, fmt};
 use getrandom;
 use k256::ecdsa::{SigningKey, VerifyingKey};
 
-use super::basic_structs::{Address, Message, SignedMessage, Transaction, SignedTransaction, PrivateKey, TypedData};
+use super::utility::{Address, Message, Transaction, SignedTransaction, PrivateKey, TypedData};
+use super::signatures::SignedMessage;
 use super::signature_algorithms::{
     SignatureData, 
     Eip191Hasher, Eip712Hasher, TransactionHasher, SignatureHasher,
@@ -191,7 +192,7 @@ impl WalletManager {
     /// # Examples
     /// ```
     /// # use peanut_task::core::wallet_manager::WalletManager;
-    /// # use peanut_task::core::basic_structs::Message;
+    /// # use peanut_task::core::utility::Message;
     /// let wallet = WalletManager::from_hex_string(
     ///     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     /// ).unwrap();
@@ -297,7 +298,7 @@ impl WalletManager {
     /// # Examples
     /// ```
     /// # use peanut_task::core::wallet_manager::WalletManager;
-    /// # use peanut_task::core::basic_structs::{Transaction, Address};
+    /// # use peanut_task::core::utility::{Transaction, Address};
     /// let wallet = WalletManager::from_hex_string(
     ///     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     /// ).unwrap();

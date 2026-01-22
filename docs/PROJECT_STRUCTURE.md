@@ -15,7 +15,10 @@ peanut_task/
 │   ├── main.rs             # Binary entry point (demo)
 │   └── core/               # Core implementation modules
 │       ├── mod.rs          # Module declarations
-│       ├── basic_structs.rs # Core data structures
+│       ├── utility.rs      # Utility types (Address, PrivateKey, Message, etc.)
+│       ├── signatures.rs   # Signature types (Signature, SignedMessage)
+│       ├── token_amount.rs # Token amount handling with precision
+│       ├── base_types.rs  # Re-exports from utility, signatures, token_amount
 │       ├── serializer.rs   # Canonical JSON serialization
 │       ├── signature_algorithms.rs # Signature algorithm implementations
 │       └── wallet_manager.rs # Wallet operations wrapper
@@ -26,28 +29,24 @@ peanut_task/
 
 ## Core Modules
 
-### 1. `basic_structs.rs` - Core Data Structures
+### 1. `utility.rs` - Utility Types
 
-**Purpose**: Defines fundamental types used throughout the library with security-focused design.
+**Purpose**: Defines utility types used throughout the library with security-focused design.
 
 **Key Components**:
 
 - **`Address`**: Ethereum address wrapper with validation
   - Validates format (0x prefix, 42 chars, 20 bytes)
   - Ensures addresses are properly formatted before use
+  - Error type: `AddressError`
 
 - **`PrivateKey`**: Secure wrapper for 32-byte private keys
   - Implements `SecureHashable` trait to prevent accidental logging
   - Debug output shows hash instead of actual key bytes
 
-- **`Signature`**: ECDSA signature representation
-  - Contains r, s (32 bytes each) and v (recovery id)
-  - Supports conversion to hex and raw bytes
-
-- **`SignedMessage`**: Type-safe wrapper for verified signatures
-  - Can only be created through verification
-  - Guarantees signature is cryptographically valid
-  - Supports signer recovery
+- **`SecureHashable`**: Trait for types containing sensitive data
+  - Provides secure hashing for debug output
+  - Prevents accidental exposure of sensitive material
 
 - **`Message`**: Simple string message for EIP-191 signing
 
@@ -56,6 +55,47 @@ peanut_task/
 
 - **`Transaction`**: Ethereum transaction structure
   - Contains all transaction fields (nonce, gas, to, value, data, chain_id)
+
+- **`SignedTransaction`**: Wrapper for signed transaction data
+
+**Security Features**:
+- `SecureHashable` trait prevents accidental key exposure in logs
+- Address validation ensures only valid addresses are used
+
+### 2. `signatures.rs` - Signature Types
+
+**Purpose**: Defines signature-related types and structures.
+
+**Key Components**:
+
+- **`Signature`**: ECDSA signature representation
+  - Contains r, s (32 bytes each) and v (recovery id)
+  - Supports conversion to hex and raw bytes
+  - `new()`: Creates from r, s, v components
+  - `to_bytes()`: Returns 65-byte array
+  - `to_hex()`: Returns hex string with 0x prefix
+
+- **`SignedMessage`**: Type-safe wrapper for verified signatures
+  - Can only be created through verification
+  - Guarantees signature is cryptographically valid
+  - Supports signer recovery
+  - `verify()`: Verifies signature validity
+  - `recover_signer()`: Recovers signer address
+  - `algorithm()`: Returns the signature algorithm used
+
+- **`SignatureError`**: Error type for signature operations
+  - Wraps `SignatureAlgorithmError`
+  - Provides signer mismatch error
+
+**Security Features**:
+- Type system prevents invalid signature creation
+- Verification required for `SignedMessage` construction
+
+### 3. `token_amount.rs` - Token Amount Handling
+
+**Purpose**: Provides secure handling of token amounts with decimal precision.
+
+**Key Components**:
 
 - **`TokenAmount`**: Token amount representation with precision
   - Stores raw amount in smallest unit (u128)
@@ -70,14 +110,28 @@ peanut_task/
   - `Mul` trait: `*` operator for multiplying by integers (panics on error)
   - `Display` trait: Formats as "{human_readable} {symbol}" (e.g., "1.5 ETH")
   - All operations use integer arithmetic and string formatting to avoid precision loss
-  - Error handling via `TokenAmountError` enum (DecimalMismatch, Overflow)
 
-**Security Features**:
-- `SecureHashable` trait prevents accidental key exposure in logs
-- Address validation ensures only valid addresses are used
-- Type system prevents invalid signature creation
+- **`TokenAmountError`**: Error type for token amount operations
+  - `DecimalMismatch`: When adding amounts with different decimals
+  - `Overflow`: When arithmetic operations overflow
 
-### 2. `serializer.rs` - Canonical JSON Serialization
+**Design Principles**:
+- No floating-point arithmetic (prevents precision loss)
+- Integer-based calculations with string formatting
+- Type-safe operations with clear error handling
+
+### 4. `base_types.rs` - Base Types Re-exports
+
+**Purpose**: Convenience module that re-exports all base types from utility, signatures, and token_amount modules.
+
+**Usage**: Provides a single import point for all core types:
+```rust
+use peanut_task::core::base_types::*;
+```
+
+This allows importing all types from one location while maintaining the modular structure.
+
+### 5. `serializer.rs` - Canonical JSON Serialization
 
 **Purpose**: Provides deterministic JSON serialization for cryptographic operations.
 
@@ -101,7 +155,7 @@ peanut_task/
 
 **Usage**: Critical for EIP-712 where domain, types, and value must be hashed deterministically.
 
-### 3. `signature_algorithms.rs` - Signature Algorithm Implementations
+### 6. `signature_algorithms.rs` - Signature Algorithm Implementations
 
 **Purpose**: Implements Ethereum signature standards with compile-time type safety.
 
@@ -153,7 +207,7 @@ Provides a unified interface for all signature algorithms:
 - `recover_signer_with_algorithm()`: Recovers signer without verification
 - `compute_hash_with_algorithm()`: Computes hash based on data type
 
-### 4. `wallet_manager.rs` - Wallet Operations Wrapper
+### 7. `wallet_manager.rs` - Wallet Operations Wrapper
 
 **Purpose**: High-level interface for wallet operations that prevents direct key access.
 
@@ -188,26 +242,29 @@ Provides a unified interface for all signature algorithms:
 │  Exports: SignatureAlgorithm, SignatureData, TypedData      │
 └───────────────────────┬─────────────────────────────────────┘
                         │
-        ┌───────────────┴───────────────┐
-        │                               │
+        ┌───────────────┴──────────────┐
+        │                              │
 ┌───────▼────────┐            ┌────────▼────────┐
-│ basic_structs  │            │ wallet_manager  │
-│                │            │                 │
-│ - Address      │───────────▶│ - Key loading   │
-│ - PrivateKey   │            │ - Signing ops   │
-│ - Signature    │            │ - Address deriv │
-│ - SignedMessage│            └────────┬─────────┘
+│ utility        │            │ wallet_manager  │
+│ signatures     │◀──────────│                 │
+│ token_amount   │            │ - Key loading   │
+│                │            │ - Signing ops   │
+│ - Address      │            │ - Address deriv │
+│ - PrivateKey   │            └───────┬─────────┘
+│ - Signature    │                    │
+│ - SignedMessage│                    │
 │ - Message      │                    │
 │ - TypedData    │                    │
 │ - Transaction  │                    │
+│ - TokenAmount  │                    │
 └───────┬────────┘                    │
         │                             │
-        │                    ┌────────▼──────────────┐
+        │                    ┌────────▼─────────────┐
         │                    │ signature_algorithms │
         │                    │                      │
         │                    │ - Eip191Hasher       │
         │                    │ - Eip712Hasher       │
-        │                    │ - TransactionHasher │
+        │                    │ - TransactionHasher  │
         │                    │ - Recovery           │
         │                    └──────────┬───────────┘
         │                               │
