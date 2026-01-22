@@ -243,5 +243,7 @@ impl TypedData {
     }
 }
 
+// TODO: Remove this once we get a working version
 pub struct UnfinishedType;
+
 pub struct SignedTransaction(pub String);
