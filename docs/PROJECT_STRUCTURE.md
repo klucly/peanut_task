@@ -318,16 +318,17 @@ Provides a unified interface for all signature algorithms:
   - `rpc_urls`: List of RPC endpoint URLs as `RpcUrl` (with fallback support)
   - `timeout`: Request timeout in seconds
   - `max_retries`: Maximum number of retries per request
-  - `new()`: Creates a new ChainClient with configuration
+  - `runtime`: Tokio runtime for async operations (internal)
+  - `new()`: Creates a new ChainClient with configuration (returns `Result<ChainClient, ChainClientCreationError>`)
   - `get_balance()`: Gets the balance of an address
-  - `get_nonce()`: Gets the nonce of an address
+  - `get_nonce()`: Gets the nonce of an address (takes `block` parameter: "latest", "pending", "earliest", or block number)
   - `get_gas_price()`: Returns current gas price information
   - `estimate_gas()`: Estimates gas required for a transaction
-  - `send_transaction()`: Sends a signed transaction (returns tx hash)
-  - `wait_for_receipt()`: Waits for transaction confirmation
-  - `get_transaction()`: Gets transaction information by hash
-  - `get_receipt()`: Gets transaction receipt by hash
-  - `call()`: Simulates a transaction without sending (eth_call)
+  - `send_transaction()`: Sends a signed transaction (returns tx hash) - **Not yet implemented**
+  - `wait_for_receipt()`: Waits for transaction confirmation - **Not yet implemented**
+  - `get_transaction()`: Gets transaction information by hash - **Not yet implemented**
+  - `get_receipt()`: Gets transaction receipt by hash - **Not yet implemented**
+  - `call()`: Simulates a transaction without sending (eth_call) - **Not yet implemented**
 
 - **`GasPrice`**: Current gas price information
   - `base_fee`: Base fee per gas (in wei)
@@ -335,7 +336,11 @@ Provides a unified interface for all signature algorithms:
   - `priority_fee_medium`: Medium priority fee estimate (in wei)
   - `priority_fee_high`: High priority fee estimate (in wei)
   - `new()`: Creates a new GasPrice instance
-  - `get_max_fee()`: Calculates maxFeePerGas with buffer for base fee increase
+  - `get_max_fee()`: Calculates maxFeePerGas with buffer for base fee increase - **Not yet implemented**
+
+- **`ChainClientCreationError`**: Error type for ChainClient creation
+  - `NoRpcUrlsProvided`: No RPC URLs were provided during construction
+  - `TokioRuntimeError`: Failed to create Tokio runtime
 
 - **`ChainClientError`**: Error type for ChainClient operations
   - `RpcError`: RPC request failed
@@ -347,9 +352,9 @@ Provides a unified interface for all signature algorithms:
   - `InvalidPriority`: Invalid priority level
 
 **Features**:
-- Automatic retry with exponential backoff
-- Multiple RPC endpoint fallback
-- Request timing/logging (to be implemented)
+- Multiple RPC endpoint fallback (tries URLs in sequence until one succeeds)
+- Automatic retry with exponential backoff - **Not yet implemented** (max_retries field stored but unused)
+- Request timing/logging - **Not yet implemented**
 - Proper error classification
 
 **Design Principles**:
@@ -359,72 +364,31 @@ Provides a unified interface for all signature algorithms:
 
 ## Module Interconnections
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Public API (lib.rs)                      │
-│  Exports: SignatureAlgorithm, SignatureData, TypedData      │
-└───────────────────────┬─────────────────────────────────────┘
-                        │
-        ┌───────────────┴──────────────┐
-        │                              │
-┌───────▼────────┐            ┌────────▼────────┐
-│ utility        │            │ wallet_manager  │
-│ signatures     │◀──────────│                 │
-│ token_amount   │            │ - Key loading   │
-│ transaction_   │            │ - Signing ops   │
-│   receipt      │            │ - Address deriv │
-│                │            └───────┬─────────┘
-│ - Address      │                    │
-│                │                    │
-│ - Signature    │                    │
-│ - SignedMessage│                    │
-│ - Message      │                    │
-│ - TypedData    │                    │
-│ - Transaction  │                    │
-│ - TokenAmount  │                    │
-│ - Transaction  │                    │
-│   Receipt      │                    │
-│ - Log          │                    │
-└───────┬────────┘                    │
-        │                             │
-        │  (transaction_receipt uses  │
-        │   utility::Address and      │
-        │   token_amount::TokenAmount)│
-        │                             │
-        │                    ┌────────▼─────────────┐
-        │                    │ signature_algorithms │
-        │                    │                      │
-        │                    │ - Eip191Hasher       │
-        │                    │ - Eip712Hasher       │
-        │                    │ - TransactionHasher  │
-        │                    │ - Recovery           │
-        │                    └──────────┬───────────┘
-        │                               │
-        │                    ┌──────────▼───────────┐
-        │                    │ serializer           │
-        │                    │                      │
-        │                    │ - Canonical JSON     │
-        │                    │ - Keccak-256 hash    │
-        │                    └──────────────────────┘
-        │
-        └────────────────────────────────────────────┐
-                                                     │
-                                    ┌────────────────▼────────────┐
-                                    │ chain/                      │
-                                    │                             │
-                                    │ - ChainClient               │
-                                    │ - GasPrice                  │
-                                    │ - RPC operations            │
-                                    └─────────────────────────────┘
-                                                     │
-                                    ┌────────────────▼────────────┐
-                                    │ Tests & Examples            │
-                                    │                             │
-                                    │ - Integration tests         │
-                                    │ - Usage examples            │
-                                    │ - Security tests            │
-                                    └─────────────────────────────┘
-```
+**Public API (lib.rs)**:
+- Modules: `core`, `chain`
+- Re-exports: `SignatureAlgorithm`, `SignatureData`, `SignatureAlgorithmError`, `TypedData`
+
+**Dependency Flow**:
+
+1. **Base modules** (no dependencies on other core modules):
+   - `utility`: Base types (Address, Message, TypedData, Transaction, SignedTransaction)
+   - `serializer`: Canonical JSON serialization
+   - `token_amount`: Token amount handling
+
+2. **Dependent modules**:
+   - `signatures`: Uses `utility` (Address) and `signature_algorithms`
+   - `signature_algorithms`: Uses `utility`, `signatures` (Signature), `serializer`
+     (Note: Circular dependency between `signatures` ↔ `signature_algorithms` is resolved at compile time)
+   - `transaction_receipt`: Uses `utility` (Address) and `token_amount` (TokenAmount)
+   - `wallet_manager`: Uses `utility`, `signatures`, `signature_algorithms`
+
+3. **Re-export module**:
+   - `base_types`: Re-exports from `utility`, `signatures`, `token_amount`, `transaction_receipt`
+     (No runtime dependencies, just convenience re-exports)
+
+4. **Chain module**:
+   - `url_wrapper`: Standalone (RPC URL wrapper)
+   - `chain_client`: Uses `core::base_types` (re-exports all core types) and `chain::RpcUrl`
 
 ## Data Flow Examples
 
@@ -543,8 +507,11 @@ The project includes comprehensive tests:
 - **`serializer_tests.rs`**: Tests canonical JSON serialization
 - **`signature_algorithm_tests.rs`**: Tests signature algorithm correctness
 - **`signature_verification_tests.rs`**: Tests signature verification
+- **`spec_tests.rs`**: Specification compliance tests (verifies code follows specific requirements)
 - **`token_amount_tests.rs`**: Tests TokenAmount creation, parsing, formatting, and edge cases
 - **`transaction_address_validation_tests.rs`**: Tests transaction address validation
+- **`transaction_receipt_tests.rs`**: Tests transaction receipt parsing and fee calculation
+- **`url_wrapper_tests.rs`**: Tests RpcUrl redaction, validation, and API key protection
 
 ## Usage Patterns
 
@@ -584,6 +551,7 @@ let signed_tx = wallet.sign_transaction(tx)?;
 
 ## Dependencies
 
+- **`alloy`**: Ethereum RPC client library (used in chain module for provider operations)
 - **`k256`**: ECDSA/secp256k1 cryptography (provides SigningKey with secure Debug)
 - **`sha3`**: Keccak-256 hashing (Ethereum standard)
 - **`serde`/`serde_json`**: JSON serialization
@@ -591,6 +559,10 @@ let signed_tx = wallet.sign_transaction(tx)?;
 - **`thiserror`**: Error handling
 - **`getrandom`**: Cryptographically secure random number generation
 - **`dotenvy`**: Environment variable loading
+- **`url`**: URL parsing and validation (used in url_wrapper)
+- **`tokio`**: Async runtime (used in chain_client for async RPC operations)
+- **`reqwest`**: HTTP client (transitive dependency via alloy)
+- **`sha2`**: SHA-2 hashing (available but not currently used)
 
 ## Build System
 
