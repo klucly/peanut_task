@@ -12,12 +12,22 @@ use crate::core::base_types::{
 use alloy::primitives::Address as AlloyAddress;
 use alloy::providers::{Provider, ProviderBuilder};
 use tokio::runtime::Runtime;
-use crate::chain::SafeUrl;
+use crate::chain::RpcUrl;
+
+/// Errors that can occur during ChainClient creation.
+#[derive(Debug, thiserror::Error)]
+pub enum ChainClientCreationError {
+    #[error("No RPC URLs provided")]
+    NoRpcUrlsProvided,
+    
+    #[error("Failed to create Tokio runtime: {0}")]
+    TokioRuntimeError(String),
+}
 
 /// Ethereum RPC client with reliability features.
 pub struct ChainClient {
     /// List of RPC endpoint URLs to try (with fallback)
-    rpc_urls: Vec<SafeUrl>,
+    rpc_urls: Vec<RpcUrl>,
     /// Request timeout in seconds
     timeout: u64,
     /// Maximum number of retries per request
@@ -34,18 +44,31 @@ impl ChainClient {
     /// * `timeout` - Request timeout in seconds
     /// * `max_retries` - Maximum number of retries per request
     /// 
-    /// # Panics
-    /// Panics if the Tokio runtime cannot be created
-    pub fn new(rpc_urls: Vec<SafeUrl>, timeout: u64, max_retries: u32) -> Self {
+    /// # Returns
+    /// Returns `Ok(ChainClient)` if the configuration is valid, or `Err(ChainClientCreationError)`
+    /// if the client cannot be created (e.g., no RPC URLs provided or Tokio runtime creation failed).
+    /// 
+    /// # Examples
+    /// ```
+    /// # use peanut_task::chain::{ChainClient, RpcUrl, ChainClientCreationError};
+    /// let rpc_urls = vec![RpcUrl::new("https://eth-sepolia.g.alchemy.com/v2/{}", "demo").unwrap()];
+    /// let client = ChainClient::new(rpc_urls, 30, 3)?;
+    /// # Ok::<(), ChainClientCreationError>(())
+    /// ```
+    pub fn new(rpc_urls: Vec<RpcUrl>, timeout: u64, max_retries: u32) -> Result<Self, ChainClientCreationError> {
+        if rpc_urls.is_empty() {
+            return Err(ChainClientCreationError::NoRpcUrlsProvided);
+        }
+
         let runtime = Runtime::new()
-            .expect("Failed to create Tokio runtime");
+            .map_err(|e| ChainClientCreationError::TokioRuntimeError(e.to_string()))?;
         
-        Self {
+        Ok(Self {
             rpc_urls,
             timeout,
             max_retries,
             runtime,
-        }
+        })
     }
 
     /// Gets the balance of an address.
@@ -58,9 +81,9 @@ impl ChainClient {
     /// 
     /// # Examples
     /// ```
-    /// # use peanut_task::chain::{ChainClient, SafeUrl};
+    /// # use peanut_task::chain::{ChainClient, RpcUrl};
     /// # use peanut_task::core::base_types::Address;
-    /// # let client = ChainClient::new(vec![SafeUrl::new("https://eth-sepolia.g.alchemy.com/v2/{}", "demo").unwrap()], 30, 3);
+    /// # let client = ChainClient::new(vec![RpcUrl::new("https://eth-sepolia.g.alchemy.com/v2/{}", "demo").unwrap()], 30, 3)?;
     /// # let addr = Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap();
     /// let balance = client.get_balance(addr)?;
     /// # Ok::<(), peanut_task::chain::ChainClientError>(())
@@ -90,13 +113,12 @@ impl ChainClient {
     /// Attempts to get balance from a specific RPC URL.
     fn try_get_balance_from_url(
         &self,
-        rpc_url: &SafeUrl,
+        rpc_url: &RpcUrl,
         address: AlloyAddress,
     ) -> Result<TokenAmount, ChainClientError> {
         self.runtime.block_on(async {
-            // Get the underlying URL with the actual API key
-            let parsed_url = rpc_url.as_url()
-                .map_err(|e| ChainClientError::InvalidResponse(format!("Invalid RPC URL: {}", e)))?;
+            // Get the underlying URL with the actual API key (validated at construction time)
+            let parsed_url = rpc_url.as_url().clone();
             
             // Create provider using ProviderBuilder
             let provider = ProviderBuilder::new().connect_http(parsed_url);

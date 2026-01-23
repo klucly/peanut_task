@@ -272,28 +272,41 @@ Provides a unified interface for all signature algorithms:
 - Debug output shows key hash, not actual key
 - Signatures are automatically verified upon creation
 
-### 9. `chain/url_wrapper.rs` - Safe URL Wrapper
+### 9. `chain/url_wrapper.rs` - RPC URL Wrapper
 
-**Purpose**: Provides a secure wrapper that stores a URL template and API key separately, preventing accidental exposure of sensitive information (like API keys) in logs or error messages.
+**Purpose**: Provides a secure wrapper that stores a URL template and API key separately, preventing accidental exposure of sensitive information (like API keys) in logs or error messages. Also provides RPC endpoint validation.
 
 **Key Components**:
 
-- **`SafeUrl`**: Safe wrapper that stores URL template and API key separately
+- **`RpcUrl`**: Safe wrapper that stores URL template and API key separately
   - Stores a URL template with `{}` placeholder for the API key
   - Stores the API key separately (never exposed in Display/Debug)
-  - `new()`: Creates a SafeUrl from a URL template and API key
+  - Stores the parsed `Url` (validated at construction time)
+  - `new()`: Creates a RpcUrl from a URL template and API key
     - Template must contain exactly one `{}` placeholder (e.g., "https://api.example.com/v1?key={}")
-    - Validates that the formatted URL is valid
-  - `as_url()`: Returns the full `Url` with the actual API key (explicit access)
-  - `into_url()`: Consumes SafeUrl and returns the full `Url` with the actual API key
+    - Validates that the formatted URL is valid and parses it
+    - Returns `Result<RpcUrl, RpcUrlError>` if validation fails
+  - `as_url()`: Returns a reference to the full `Url` with the actual API key (always succeeds, validated at construction)
   - `redacted()`: Returns a redacted version of the URL with `****` instead of the API key
+  - `validate()`: Validates the RPC endpoint by attempting to connect and make a test RPC call
+    - Returns `Result<(), RpcUrlValidationError>` indicating if the endpoint is reachable
+    - Uses `get_chain_id()` as a lightweight validation call
   - Implements `Display` and `Debug` to show redacted URLs with `****`
+
+- **`RpcUrlError`**: Errors that can occur during RpcUrl construction
+  - `InvalidPlaceholderCount`: Template doesn't have exactly one `{}` placeholder
+  - `InvalidUrl`: URL cannot be parsed after formatting
+
+- **`RpcUrlValidationError`**: Errors that can occur during RPC endpoint validation
+  - `UrlUnreachable`: Network/connection issues (connection, network, timeout, unreachable)
+  - `UrlRpcError`: RPC endpoint returned an error during validation
 
 **Security Features**:
 - API keys are stored separately and never exposed in Display/Debug
 - When displayed, the API key is replaced with `****` in the formatted URL
-- Full URL with actual API key only accessible via explicit methods (`as_url()`, `into_url()`)
+- Full URL with actual API key only accessible via explicit method (`as_url()`)
 - Prevents accidental API key exposure in error messages or logs
+- URL format is validated at construction time, ensuring `as_url()` always succeeds
 
 ### 10. `chain/chain_client.rs` - Ethereum RPC Client
 
@@ -302,7 +315,7 @@ Provides a unified interface for all signature algorithms:
 **Key Components**:
 
 - **`ChainClient`**: Ethereum RPC client with reliability features
-  - `rpc_urls`: List of RPC endpoint URLs as `SafeUrl` (with fallback support)
+  - `rpc_urls`: List of RPC endpoint URLs as `RpcUrl` (with fallback support)
   - `timeout`: Request timeout in seconds
   - `max_retries`: Maximum number of retries per request
   - `new()`: Creates a new ChainClient with configuration
