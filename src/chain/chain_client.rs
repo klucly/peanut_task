@@ -12,11 +12,12 @@ use crate::core::base_types::{
 use alloy::primitives::Address as AlloyAddress;
 use alloy::providers::{Provider, ProviderBuilder};
 use tokio::runtime::Runtime;
+use crate::chain::SafeUrl;
 
 /// Ethereum RPC client with reliability features.
 pub struct ChainClient {
     /// List of RPC endpoint URLs to try (with fallback)
-    rpc_urls: Vec<String>,
+    rpc_urls: Vec<SafeUrl>,
     /// Request timeout in seconds
     timeout: u64,
     /// Maximum number of retries per request
@@ -35,7 +36,7 @@ impl ChainClient {
     /// 
     /// # Panics
     /// Panics if the Tokio runtime cannot be created
-    pub fn new(rpc_urls: Vec<String>, timeout: u64, max_retries: u32) -> Self {
+    pub fn new(rpc_urls: Vec<SafeUrl>, timeout: u64, max_retries: u32) -> Self {
         let runtime = Runtime::new()
             .expect("Failed to create Tokio runtime");
         
@@ -57,9 +58,9 @@ impl ChainClient {
     /// 
     /// # Examples
     /// ```
-    /// # use peanut_task::chain::ChainClient;
+    /// # use peanut_task::chain::{ChainClient, SafeUrl};
     /// # use peanut_task::core::base_types::Address;
-    /// # let client = ChainClient::new(vec!["https://eth-sepolia.g.alchemy.com/v2/demo".to_string()], 30, 3);
+    /// # let client = ChainClient::new(vec![SafeUrl::new("https://eth-sepolia.g.alchemy.com/v2/{}", "demo").unwrap()], 30, 3);
     /// # let addr = Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap();
     /// let balance = client.get_balance(addr)?;
     /// # Ok::<(), peanut_task::chain::ChainClientError>(())
@@ -89,16 +90,16 @@ impl ChainClient {
     /// Attempts to get balance from a specific RPC URL.
     fn try_get_balance_from_url(
         &self,
-        rpc_url: &str,
+        rpc_url: &SafeUrl,
         address: AlloyAddress,
     ) -> Result<TokenAmount, ChainClientError> {
         self.runtime.block_on(async {
-            // Parse RPC URL - ProviderBuilder expects a parsed URL
-            let url = rpc_url.parse::<url::Url>()
+            // Get the underlying URL with the actual API key
+            let parsed_url = rpc_url.as_url()
                 .map_err(|e| ChainClientError::InvalidResponse(format!("Invalid RPC URL: {}", e)))?;
             
             // Create provider using ProviderBuilder
-            let provider = ProviderBuilder::new().connect_http(url);
+            let provider = ProviderBuilder::new().connect_http(parsed_url);
             
             // Get balance (returns U256) - using latest block
             let balance = provider.get_balance(address).await

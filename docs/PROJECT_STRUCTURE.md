@@ -25,7 +25,8 @@ peanut_task/
 │   │   └── wallet_manager.rs # Wallet operations wrapper
 │   └── chain/              # Ethereum RPC client module
 │       ├── mod.rs          # Module declarations
-│       └── chain_client.rs  # RPC client with reliability features
+│       ├── chain_client.rs  # RPC client with reliability features
+│       └── url_wrapper.rs  # Safe URL wrapper for API key protection
 ├── tests/                  # Integration tests
 ├── examples/               # Usage examples
 └── docs/                   # Documentation
@@ -271,14 +272,37 @@ Provides a unified interface for all signature algorithms:
 - Debug output shows key hash, not actual key
 - Signatures are automatically verified upon creation
 
-### 9. `chain/chain_client.rs` - Ethereum RPC Client
+### 9. `chain/url_wrapper.rs` - Safe URL Wrapper
+
+**Purpose**: Provides a secure wrapper that stores a URL template and API key separately, preventing accidental exposure of sensitive information (like API keys) in logs or error messages.
+
+**Key Components**:
+
+- **`SafeUrl`**: Safe wrapper that stores URL template and API key separately
+  - Stores a URL template with `{}` placeholder for the API key
+  - Stores the API key separately (never exposed in Display/Debug)
+  - `new()`: Creates a SafeUrl from a URL template and API key
+    - Template must contain exactly one `{}` placeholder (e.g., "https://api.example.com/v1?key={}")
+    - Validates that the formatted URL is valid
+  - `as_url()`: Returns the full `Url` with the actual API key (explicit access)
+  - `into_url()`: Consumes SafeUrl and returns the full `Url` with the actual API key
+  - `redacted()`: Returns a redacted version of the URL with `****` instead of the API key
+  - Implements `Display` and `Debug` to show redacted URLs with `****`
+
+**Security Features**:
+- API keys are stored separately and never exposed in Display/Debug
+- When displayed, the API key is replaced with `****` in the formatted URL
+- Full URL with actual API key only accessible via explicit methods (`as_url()`, `into_url()`)
+- Prevents accidental API key exposure in error messages or logs
+
+### 10. `chain/chain_client.rs` - Ethereum RPC Client
 
 **Purpose**: Provides a reliable Ethereum RPC client with automatic retry, fallback endpoints, and proper error handling.
 
 **Key Components**:
 
 - **`ChainClient`**: Ethereum RPC client with reliability features
-  - `rpc_urls`: List of RPC endpoint URLs (with fallback support)
+  - `rpc_urls`: List of RPC endpoint URLs as `SafeUrl` (with fallback support)
   - `timeout`: Request timeout in seconds
   - `max_retries`: Maximum number of retries per request
   - `new()`: Creates a new ChainClient with configuration
