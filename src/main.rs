@@ -23,4 +23,12 @@ fn main() {
     // Test get_nonce with "latest" block
     let nonce_latest = chain_client.get_nonce(address.clone(), "latest").unwrap();
     println!("Nonce (latest): {}", nonce_latest);
+    
+    // Test get_gas_price
+    let gas_price = chain_client.get_gas_price().unwrap();
+    println!("Gas Price Info:");
+    println!("  Base fee: {} wei ({} gwei)", gas_price.base_fee, gas_price.base_fee / 1_000_000_000);
+    println!("  Priority fee (low): {} wei ({} gwei)", gas_price.priority_fee_low, gas_price.priority_fee_low / 1_000_000_000);
+    println!("  Priority fee (medium): {} wei ({} gwei)", gas_price.priority_fee_medium, gas_price.priority_fee_medium / 1_000_000_000);
+    println!("  Priority fee (high): {} wei ({} gwei)", gas_price.priority_fee_high, gas_price.priority_fee_high / 1_000_000_000);
 }

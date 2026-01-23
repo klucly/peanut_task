@@ -11,7 +11,7 @@ use crate::core::base_types::{
 };
 use alloy::primitives::Address as AlloyAddress;
 use alloy::providers::{Provider, ProviderBuilder};
-use alloy::rpc::types::{BlockId, BlockNumberOrTag};
+use alloy::rpc::types::{BlockId, BlockNumberOrTag, FeeHistory};
 use tokio::runtime::Runtime;
 use crate::chain::RpcUrl;
 
@@ -108,7 +108,9 @@ impl ChainClient {
         }
         
         // All endpoints failed
-        Err(last_error.unwrap_or(ChainClientError::AllEndpointsFailed))
+        Err(last_error
+            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
+            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
     }
     
     /// Attempts to get balance from a specific RPC URL.
@@ -182,7 +184,9 @@ impl ChainClient {
         }
         
         // All endpoints failed
-        Err(last_error.unwrap_or(ChainClientError::AllEndpointsFailed))
+        Err(last_error
+            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
+            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
     }
     
     /// Attempts to get nonce from a specific RPC URL.
@@ -213,8 +217,99 @@ impl ChainClient {
     /// 
     /// # Returns
     /// A `GasPrice` struct containing current gas price information
+    /// 
+    /// # Examples
+    /// ```
+    /// # use peanut_task::chain::{ChainClient, RpcUrl};
+    /// # let client = ChainClient::new(vec![RpcUrl::new("https://eth-sepolia.g.alchemy.com/v2/{}", "demo").unwrap()], 30, 3)?;
+    /// let gas_price = client.get_gas_price()?;
+    /// # Ok::<(), peanut_task::chain::ChainClientError>(())
+    /// ```
     pub fn get_gas_price(&self) -> Result<GasPrice, ChainClientError> {
-        todo!()
+        // Try each RPC URL with fallback
+        let mut last_error = None;
+        
+        for rpc_url in &self.rpc_urls {
+            match self.try_get_gas_price_from_url(rpc_url) {
+                Ok(gas_price) => return Ok(gas_price),
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
+        
+        // All endpoints failed
+        Err(last_error
+            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
+            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
+    }
+    
+    /// Attempts to get gas price from a specific RPC URL.
+    fn try_get_gas_price_from_url(
+        &self,
+        rpc_url: &RpcUrl,
+    ) -> Result<GasPrice, ChainClientError> {
+        self.runtime.block_on(async {
+            // Get the underlying URL with the actual API key (validated at construction time)
+            let parsed_url = rpc_url.as_url().clone();
+            
+            // Create provider using ProviderBuilder
+            let provider = ProviderBuilder::new().connect_http(parsed_url);
+            
+            // Get fee history to get base fee and estimate priority fees
+            // The reward_percentiles parameter [25.0, 50.0, 75.0] tells the RPC node to calculate
+            // what priority fee (tip) was paid at each percentile across all transactions:
+            // - 25.0: 25th percentile (25% of transactions paid this or less) -> "low" priority
+            // - 50.0: 50th percentile/median (50% paid this or less) -> "medium" priority
+            // - 75.0: 75th percentile (75% paid this or less) -> "high" priority
+            // Using 1 block for simplicity
+            let fee_history = provider.get_fee_history(1, BlockNumberOrTag::Latest, &[25.0, 50.0, 75.0])
+                .await
+                .map_err(|e| ChainClientError::RpcError(format!("Failed to get fee history: {}", e)))?;
+            
+            // Extract base fee from the latest block's base fee per gas
+            // fee_history.base_fee_per_gas contains base fees, with the last one being the most recent
+            let base_fee = fee_history.base_fee_per_gas
+                .last()
+                .copied()
+                .map(|fee: u128| fee as u64)
+                .ok_or_else(|| ChainClientError::InvalidResponse("Base fee not found in fee history".to_string()))?;
+            
+            // Extract priority fee estimates from the most recent block's reward percentiles
+            // fee_history.reward is Option<Vec<Vec<u128>>> where each inner vec contains [25th, 50th, 75th] percentiles
+            let (priority_fee_low, priority_fee_medium, priority_fee_high) = 
+                if let Some(rewards) = fee_history.reward.as_ref() {
+                    if let Some(block_rewards) = rewards.first() {
+                        if block_rewards.len() >= 3 {
+                            (
+                                block_rewards[0] as u64,
+                                block_rewards[1] as u64,
+                                block_rewards[2] as u64,
+                            )
+                        } else {
+                            return Err(ChainClientError::InvalidResponse(
+                                format!("Insufficient reward percentiles: expected 3, got {}", block_rewards.len())
+                            ));
+                        }
+                    } else {
+                        return Err(ChainClientError::InvalidResponse(
+                            "No block rewards found in fee history".to_string()
+                        ));
+                    }
+                } else {
+                    return Err(ChainClientError::InvalidResponse(
+                        "Reward data not found in fee history".to_string()
+                    ));
+                };
+            
+            Ok(GasPrice::new(
+                base_fee,
+                priority_fee_low,
+                priority_fee_medium,
+                priority_fee_high,
+            ))
+        })
     }
 
     /// Estimates the gas required for a transaction.
@@ -389,8 +484,8 @@ pub enum ChainClientError {
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
     
-    #[error("All RPC endpoints failed")]
-    AllEndpointsFailed,
+    #[error("All RPC endpoints failed: {0}")]
+    AllEndpointsFailed(String),
     
     #[error("Transaction not found: {0}")]
     TransactionNotFound(String),
