@@ -11,6 +11,7 @@ use crate::core::base_types::{
 };
 use alloy::primitives::Address as AlloyAddress;
 use alloy::providers::{Provider, ProviderBuilder};
+use alloy::rpc::types::{BlockId, BlockNumberOrTag};
 use tokio::runtime::Runtime;
 use crate::chain::RpcUrl;
 
@@ -149,8 +150,63 @@ impl ChainClient {
     /// 
     /// # Returns
     /// The nonce as a `u64`
+    /// 
+    /// # Examples
+    /// ```
+    /// # use peanut_task::chain::{ChainClient, RpcUrl};
+    /// # use peanut_task::core::base_types::Address;
+    /// # let client = ChainClient::new(vec![RpcUrl::new("https://eth-sepolia.g.alchemy.com/v2/{}", "demo").unwrap()], 30, 3)?;
+    /// # let addr = Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap();
+    /// let nonce = client.get_nonce(addr, "pending")?;
+    /// # Ok::<(), peanut_task::chain::ChainClientError>(())
+    /// ```
     pub fn get_nonce(&self, address: Address, block: &str) -> Result<u64, ChainClientError> {
-        todo!()
+        // Convert custom Address to Alloy Address
+        let alloy_address = address.value.parse::<AlloyAddress>()
+            .map_err(|e| ChainClientError::InvalidResponse(format!("Invalid address format: {}", e)))?;
+        
+        // Parse block identifier
+        let block_id = parse_block_id(block)?;
+        
+        // Try each RPC URL with fallback
+        let mut last_error = None;
+        
+        for rpc_url in &self.rpc_urls {
+            match self.try_get_nonce_from_url(rpc_url, alloy_address, block_id) {
+                Ok(nonce) => return Ok(nonce),
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
+        
+        // All endpoints failed
+        Err(last_error.unwrap_or(ChainClientError::AllEndpointsFailed))
+    }
+    
+    /// Attempts to get nonce from a specific RPC URL.
+    fn try_get_nonce_from_url(
+        &self,
+        rpc_url: &RpcUrl,
+        address: AlloyAddress,
+        block_id: BlockId,
+    ) -> Result<u64, ChainClientError> {
+        self.runtime.block_on(async {
+            // Get the underlying URL with the actual API key (validated at construction time)
+            let parsed_url = rpc_url.as_url().clone();
+            
+            // Create provider using ProviderBuilder
+            let provider = ProviderBuilder::new().connect_http(parsed_url);
+            
+            // Get transaction count (nonce) - returns u64
+            let nonce = provider.get_transaction_count(address)
+                .block_id(block_id)
+                .await
+                .map_err(|e| ChainClientError::RpcError(format!("RPC call failed: {}", e)))?;
+            
+            Ok(nonce)
+        })
     }
 
     /// Returns current gas price info (base fee, priority fee estimates).
@@ -235,6 +291,38 @@ impl ChainClient {
     /// The call result as bytes
     pub fn call(&self, tx: &Transaction, block: &str) -> Result<Vec<u8>, ChainClientError> {
         todo!()
+    }
+}
+
+/// Parses a block identifier string into Alloy's BlockId.
+/// 
+/// # Arguments
+/// * `block` - Block identifier string ("latest", "pending", "earliest", or block number as hex/dec)
+/// 
+/// # Returns
+/// Returns `Ok(BlockId)` if parsing succeeds, or `Err(ChainClientError)` if the block
+/// identifier is invalid.
+fn parse_block_id(block: &str) -> Result<BlockId, ChainClientError> {
+    match block.to_lowercase().as_str() {
+        "latest" => Ok(BlockId::Number(BlockNumberOrTag::Latest)),
+        "pending" => Ok(BlockId::Number(BlockNumberOrTag::Pending)),
+        "earliest" => Ok(BlockId::Number(BlockNumberOrTag::Earliest)),
+        _ => {
+            // Try to parse as block number (hex or decimal)
+            if let Some(hex_str) = block.strip_prefix("0x") {
+                u64::from_str_radix(hex_str, 16)
+                    .map(|n| BlockId::Number(BlockNumberOrTag::Number(n)))
+                    .map_err(|_| ChainClientError::InvalidResponse(
+                        format!("Invalid block number (hex): {}", block)
+                    ))
+            } else {
+                block.parse::<u64>()
+                    .map(|n| BlockId::Number(BlockNumberOrTag::Number(n)))
+                    .map_err(|_| ChainClientError::InvalidResponse(
+                        format!("Invalid block identifier: {}", block)
+                    ))
+            }
+        }
     }
 }
 
