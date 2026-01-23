@@ -6,6 +6,7 @@
 use std::fmt;
 use thiserror::Error;
 use sha3::{Digest, Keccak256};
+use alloy::primitives::Address as AlloyAddress;
 
 use super::token_amount::TokenAmount;
 
@@ -54,6 +55,7 @@ impl Address {
     /// - Be exactly 42 characters long (0x + 40 hex characters)
     /// - Contain only valid hexadecimal characters after the prefix
     /// - Decode to exactly 20 bytes
+    /// - Be parseable as an AlloyAddress (ensures compatibility with Alloy library)
     /// 
     /// # Returns
     /// - `Ok(())` if the address is valid
@@ -82,6 +84,10 @@ impl Address {
         if addr_bytes.len() != 20 {
             return Err(AddressError::InvalidByteLength(addr_bytes.len()));
         }
+        
+        // Verify it can be parsed as an AlloyAddress (ensures compatibility)
+        addr_str.parse::<AlloyAddress>()
+            .map_err(|e| AddressError::AlloyParseError(addr_str.to_string(), e.to_string()))?;
         
         Ok(())
     }
@@ -165,6 +171,28 @@ impl Address {
     pub fn validate(&self) -> Result<(), AddressError> {
         Self::validate_format(&self.value)
     }
+    
+    /// Converts this Address to an Alloy Address.
+    /// 
+    /// Since addresses are validated at construction time, this conversion
+    /// should never fail.
+    /// 
+    /// # Returns
+    /// Returns an `AlloyAddress` representation of this address.
+    /// 
+    /// # Examples
+    /// ```
+    /// # use peanut_task::core::utility::Address;
+    /// # use alloy::primitives::Address as AlloyAddress;
+    /// let addr = Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0")?;
+    /// let alloy_addr = addr.alloy_address();
+    /// # Ok::<(), peanut_task::core::utility::AddressError>(())
+    /// ```
+    pub fn alloy_address(&self) -> AlloyAddress {
+        // Address is validated at construction time, so this should never fail
+        self.value.parse::<AlloyAddress>()
+            .expect("Address validated at construction, parse should never fail")
+    }
 }
 
 impl fmt::Display for Address {
@@ -207,6 +235,9 @@ pub enum AddressError {
     
     #[error("Address must decode to exactly 20 bytes, got {0} bytes")]
     InvalidByteLength(usize),
+    
+    #[error("Address cannot be parsed as AlloyAddress: {0} (error: {1})")]
+    AlloyParseError(String, String),
 }
 
 /// Represents a message to be signed.

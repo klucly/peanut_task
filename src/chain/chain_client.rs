@@ -9,9 +9,10 @@
 use crate::core::base_types::{
     Address, TokenAmount, Transaction, TransactionReceipt
 };
-use alloy::primitives::Address as AlloyAddress;
+use alloy::primitives::{Address as AlloyAddress, Bytes, U256};
 use alloy::providers::{Provider, ProviderBuilder};
-use alloy::rpc::types::{BlockId, BlockNumberOrTag, FeeHistory};
+use alloy::rpc::types::{BlockId, BlockNumberOrTag, TransactionRequest};
+use alloy::network::TransactionBuilder;
 use tokio::runtime::Runtime;
 use crate::chain::RpcUrl;
 
@@ -91,8 +92,7 @@ impl ChainClient {
     /// ```
     pub fn get_balance(&self, address: Address) -> Result<TokenAmount, ChainClientError> {
         // Convert custom Address to Alloy Address
-        let alloy_address = address.value.parse::<AlloyAddress>()
-            .map_err(|e| ChainClientError::InvalidResponse(format!("Invalid address format: {}", e)))?;
+        let alloy_address = address.alloy_address();
         
         // Try each RPC URL with fallback
         let mut last_error = None;
@@ -164,8 +164,7 @@ impl ChainClient {
     /// ```
     pub fn get_nonce(&self, address: Address, block: &str) -> Result<u64, ChainClientError> {
         // Convert custom Address to Alloy Address
-        let alloy_address = address.value.parse::<AlloyAddress>()
-            .map_err(|e| ChainClientError::InvalidResponse(format!("Invalid address format: {}", e)))?;
+        let alloy_address = address.alloy_address();
         
         // Parse block identifier
         let block_id = parse_block_id(block)?;
@@ -319,8 +318,92 @@ impl ChainClient {
     /// 
     /// # Returns
     /// The estimated gas amount as a `u64`
+    /// 
+    /// # Examples
+    /// ```
+    /// # use peanut_task::chain::{ChainClient, RpcUrl};
+    /// # use peanut_task::core::base_types::{Transaction, Address, TokenAmount};
+    /// # let client = ChainClient::new(vec![RpcUrl::new("https://eth-sepolia.g.alchemy.com/v2/{}", "demo").unwrap()], 30, 3)?;
+    /// # let to = Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap();
+    /// # let tx = Transaction {
+    /// #     to,
+    /// #     value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+    /// #     data: vec![],
+    /// #     nonce: None,
+    /// #     gas_limit: None,
+    /// #     max_fee_per_gas: None,
+    /// #     max_priority_fee: None,
+    /// #     chain_id: 1,
+    /// # };
+    /// let gas_estimate = client.estimate_gas(&tx)?;
+    /// # Ok::<(), peanut_task::chain::ChainClientError>(())
+    /// ```
     pub fn estimate_gas(&self, tx: &Transaction) -> Result<u64, ChainClientError> {
-        todo!()
+        // Convert custom Transaction to Alloy TransactionRequest
+        let alloy_address = tx.to.alloy_address();
+        
+        // Build transaction request
+        let mut tx_request = TransactionRequest::default()
+            .with_to(alloy_address)
+            .with_value(U256::from(tx.value.raw))
+            .with_input(Bytes::from(tx.data.clone()));
+        
+        // Add optional fields if present
+        if let Some(nonce) = tx.nonce {
+            tx_request = tx_request.with_nonce(nonce);
+        }
+        
+        if let Some(gas_limit) = tx.gas_limit {
+            tx_request = tx_request.with_gas_limit(gas_limit);
+        }
+        
+        if let Some(max_fee_per_gas) = tx.max_fee_per_gas {
+            tx_request = tx_request.with_max_fee_per_gas(max_fee_per_gas.into());
+        }
+        
+        if let Some(max_priority_fee) = tx.max_priority_fee {
+            tx_request = tx_request.with_max_priority_fee_per_gas(max_priority_fee.into());
+        }
+        
+        // Try each RPC URL with fallback
+        let mut last_error = None;
+        
+        for rpc_url in &self.rpc_urls {
+            match self.try_estimate_gas_from_url(rpc_url, &tx_request) {
+                Ok(gas_estimate) => return Ok(gas_estimate),
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
+        
+        // All endpoints failed
+        Err(last_error
+            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
+            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
+    }
+    
+    /// Attempts to estimate gas from a specific RPC URL.
+    fn try_estimate_gas_from_url(
+        &self,
+        rpc_url: &RpcUrl,
+        tx_request: &TransactionRequest,
+    ) -> Result<u64, ChainClientError> {
+        self.runtime.block_on(async {
+            // Get the underlying URL with the actual API key (validated at construction time)
+            let parsed_url = rpc_url.as_url().clone();
+            
+            // Create provider using ProviderBuilder
+            let provider = ProviderBuilder::new().connect_http(parsed_url);
+            
+            // Estimate gas for the transaction
+            let gas_estimate = provider.estimate_gas(tx_request.clone()).await
+                .map_err(|e| ChainClientError::RpcError(format!("Gas estimation failed: {}", e)))?;
+            
+            // estimate_gas returns u64 directly
+            Ok(gas_estimate)
+        })
     }
 
     /// Sends a signed transaction and returns the transaction hash.
