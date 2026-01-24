@@ -262,8 +262,58 @@ impl ChainClient {
         todo!()
     }
 
-    pub fn call(&self, _tx: &Transaction, _block: &str) -> Result<Vec<u8>, ChainClientError> {
-        todo!()
+    /// Simulates transaction without sending; executes at `block`, returns return data or errors if the call would revert.
+    pub fn call(&self, tx: &Transaction, block: &str) -> Result<Vec<u8>, ChainClientError> {
+        let block_id = parse_block_id(block)?;
+        let mut tx_request = TransactionRequest::default()
+            .with_to(tx.to.alloy_address())
+            .with_value(U256::from(tx.value.raw))
+            .with_input(Bytes::from(tx.data.clone()));
+
+        if let Some(nonce) = tx.nonce {
+            tx_request = tx_request.with_nonce(nonce);
+        }
+        if let Some(gas_limit) = tx.gas_limit {
+            tx_request = tx_request.with_gas_limit(gas_limit);
+        }
+        if let Some(max_fee_per_gas) = tx.max_fee_per_gas {
+            tx_request = tx_request.with_max_fee_per_gas(max_fee_per_gas.into());
+        }
+        if let Some(max_priority_fee) = tx.max_priority_fee {
+            tx_request = tx_request.with_max_priority_fee_per_gas(max_priority_fee.into());
+        }
+
+        let mut last_error = None;
+        for rpc_url in &self.rpc_urls {
+            match self.try_call_from_url(rpc_url, &tx_request, block_id) {
+                Ok(data) => return Ok(data),
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
+        Err(last_error
+            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
+            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
+    }
+
+    fn try_call_from_url(
+        &self,
+        rpc_url: &RpcUrl,
+        tx_request: &TransactionRequest,
+        block_id: BlockId,
+    ) -> Result<Vec<u8>, ChainClientError> {
+        self.runtime.block_on(async {
+            let parsed_url = rpc_url.as_url().clone();
+            let provider = ProviderBuilder::new().connect_http(parsed_url);
+            let result = provider
+                .call(tx_request.clone())
+                .block(block_id)
+                .await
+                .map_err(|e| ChainClientError::RpcError(format!("eth_call failed: {}", e)))?;
+            Ok(result.to_vec())
+        })
     }
 }
 

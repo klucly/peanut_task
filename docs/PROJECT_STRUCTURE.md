@@ -18,7 +18,7 @@ Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transactio
 ## Chain
 
 - **url_wrapper**: `RpcUrl` — template with `{}` + separate API key; Display/Debug show redacted (`****`). `as_url()` for full URL; `validate()` does `get_chain_id` as connectivity check.
-- **chain_client**: `ChainClient::new(rpc_urls, timeout_sec, max_retries)`. Tries `rpc_urls` in order on failure. `get_nonce(addr, block)`: `block` = `"latest"`|`"pending"`|`"earliest"` or block number. `GasPrice`: `priority_fee_*` from `eth_feeHistory` 25/50/75 percentiles.
+- **chain_client**: `ChainClient::new(rpc_urls, timeout_sec, max_retries)`. Tries `rpc_urls` in order on failure. `get_nonce(addr, block)`: `block` = `"latest"`|`"pending"`|`"earliest"` or block number. `call(tx, block)`: `eth_call` — simulates tx at `block`, returns return data or errors if the call would revert. `GasPrice`: `priority_fee_*` from `eth_feeHistory` 25/50/75 percentiles.
 
 ## Dependencies
 
