@@ -1,5 +1,3 @@
-//! `RpcUrl`: template with `{}` + separate API key; Display/Debug redact with `****`.
-
 use url::Url;
 use thiserror::Error;
 use alloy::providers::{Provider, ProviderBuilder};
