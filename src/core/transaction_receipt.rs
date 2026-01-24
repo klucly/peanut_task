@@ -21,7 +21,6 @@ pub struct TransactionReceipt {
 }
 
 impl TransactionReceipt {
-    /// `gas_used * effective_gas_price` as `TokenAmount` (18 decimals, ETH).
     pub fn tx_fee(&self) -> TokenAmount {
         let fee_raw = self.gas_used as u128 * self.effective_gas_price as u128;
         TokenAmount::new(fee_raw, 18, Some("ETH".to_string()))

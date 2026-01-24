@@ -119,7 +119,6 @@ impl SignatureData {
     }
 }
 
-/// EIP-191 personal sign.
 pub struct Eip191Hasher;
 
 impl SignatureHasher for Eip191Hasher {
@@ -141,7 +140,6 @@ impl SignatureHasher for Eip191Hasher {
     }
 }
 
-/// EIP-712 typed data.
 pub struct Eip712Hasher;
 
 impl SignatureHasher for Eip712Hasher {
