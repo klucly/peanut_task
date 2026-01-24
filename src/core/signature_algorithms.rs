@@ -1,8 +1,3 @@
-//! Signature algorithm implementations for different Ethereum signing standards.
-//!
-//! This module provides a unified interface for different signature algorithms
-//! (EIP-191, EIP-712) used in Ethereum for signing messages and typed data.
-
 use sha3::{Digest, Keccak256};
 use k256::ecdsa::{RecoveryId, Signature as K256Signature, SigningKey, VerifyingKey};
 use thiserror::Error;
@@ -12,7 +7,6 @@ use super::utility::{Address, Message, TypedData, Transaction};
 use super::signatures::Signature;
 use super::serializer::Serializer;
 
-/// Errors that can occur during signature operations
 #[derive(Error, Debug)]
 pub enum SignatureAlgorithmError {
     #[error("Invalid recovery id: expected 27 or 28, got {0}")]
@@ -34,90 +28,58 @@ pub enum SignatureAlgorithmError {
     SignerMismatch,
 }
 
-/// Enum representing different signature algorithms
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignatureAlgorithm {
-    /// EIP-191: Personal message signing standard
-    /// Uses prefix: "\x19Ethereum Signed Message:\n" + message_length
     Eip191,
-    
-    /// EIP-712: Typed structured data hashing and signing
-    /// Uses prefix: "\x19\x01" + domain_separator_hash + struct_hash
     Eip712,
 }
 
-/// Trait for signature algorithm implementations with compile-time type safety
 pub trait SignatureHasher {
-    /// The type of data this hasher accepts
     type Data;
-    
-    /// Computes the hash that should be signed for the given data
+
     fn compute_hash(&self, data: &Self::Data) -> Result<[u8; 32], SignatureAlgorithmError>;
-    
-    /// Signs the data using the provided signing key
+
     fn sign(&self, signing_key: &SigningKey, data: &Self::Data) -> Result<Signature, SignatureAlgorithmError> {
-        // Compute the hash
         let hash = self.compute_hash(data)?;
-        
-        // Sign with recovery id
+
         let (signature, recovery_id) = signing_key
             .sign_prehash_recoverable(&hash)
             .map_err(|e| SignatureAlgorithmError::SigningError(e.to_string()))?;
-        
-        // Get the signature bytes (r, s components)
+
         let sig_bytes = signature.to_bytes();
-        
-        // Extract r and s components (each 32 bytes)
         let mut r = [0u8; 32];
         let mut s = [0u8; 32];
+
         r.copy_from_slice(&sig_bytes[0..32]);
         s.copy_from_slice(&sig_bytes[32..64]);
-        
-        // v is 27 + recovery_id for Ethereum compatibility
         let v = 27 + recovery_id.to_byte();
-        
         Ok(Signature::new(r, s, v))
     }
-    
-    /// Verifies the signature and recovers the signer's address
+
     fn verify_and_recover(&self, data: &Self::Data, signature: &Signature) -> Result<Address, SignatureAlgorithmError> {
-        // Validate recovery id
         if signature.v != 27 && signature.v != 28 {
             return Err(SignatureAlgorithmError::InvalidRecoveryId(signature.v));
         }
-
-        // Compute the message hash
         let message_hash = self.compute_hash(data)?;
-
-        // Convert v to recovery id (v - 27 gives us 0 or 1)
         let recovery_id = RecoveryId::from_byte(signature.v - 27)
             .ok_or(SignatureAlgorithmError::InvalidRecoveryId(signature.v))?;
 
-        // Construct the signature bytes (r + s)
         let mut sig_bytes = [0u8; 64];
         sig_bytes[0..32].copy_from_slice(&signature.r);
         sig_bytes[32..64].copy_from_slice(&signature.s);
 
-        // Parse the signature
         let k256_sig = K256Signature::from_bytes((&sig_bytes).into())
             .map_err(|_| SignatureAlgorithmError::InvalidSignature)?;
 
-        // Recover the public key from the signature and message hash
         let verifying_key = VerifyingKey::recover_from_prehash(&message_hash, &k256_sig, recovery_id)
             .map_err(|_| SignatureAlgorithmError::RecoveryFailed)?;
-
-        // Derive the Ethereum address from the recovered public key
         Ok(derive_address_from_public_key(&verifying_key))
     }
 }
 
-/// Data to be signed - can be either a simple message or typed data
 #[derive(Debug, Clone)]
 pub enum SignatureData {
-    /// Message for EIP-191
     Message(Message),
-    
-    /// Typed data for EIP-712
     TypedData {
         domain: Value,
         types: Value,
@@ -126,12 +88,10 @@ pub enum SignatureData {
 }
 
 impl SignatureData {
-    /// Creates SignatureData from a Message
     pub fn from_message(message: Message) -> Self {
         Self::Message(message)
     }
-    
-    /// Creates SignatureData from typed data
+
     pub fn from_typed_data(typed_data: TypedData) -> Self {
         Self::TypedData {
             domain: typed_data.domain,
@@ -139,16 +99,14 @@ impl SignatureData {
             value: typed_data.value,
         }
     }
-    
-    /// Returns a reference to the Message if this is a Message variant
+
     pub fn as_message(&self) -> Option<&Message> {
         match self {
             Self::Message(msg) => Some(msg),
             _ => None,
         }
     }
-    
-    /// Returns a reference to the typed data if this is a TypedData variant
+
     pub fn as_typed_data(&self) -> Option<TypedData> {
         match self {
             Self::TypedData { domain, types, value } => Some(TypedData {
@@ -161,7 +119,7 @@ impl SignatureData {
     }
 }
 
-/// EIP-191 implementation - uses Message
+/// EIP-191 personal sign.
 pub struct Eip191Hasher;
 
 impl SignatureHasher for Eip191Hasher {
@@ -183,105 +141,77 @@ impl SignatureHasher for Eip191Hasher {
     }
 }
 
-/// EIP-712 implementation - uses TypedData
+/// EIP-712 typed data.
 pub struct Eip712Hasher;
 
 impl SignatureHasher for Eip712Hasher {
     type Data = TypedData;
     
     fn compute_hash(&self, data: &TypedData) -> Result<[u8; 32], SignatureAlgorithmError> {
-        // No runtime check needed - compiler guarantees data is TypedData!
-        
-        // Hash each component using canonical serialization
         let domain_hash = Serializer::hash(&data.domain)
             .map_err(|e| SignatureAlgorithmError::HashError(format!("Failed to hash domain: {}", e)))?;
-        
         let types_hash = Serializer::hash(&data.types)
             .map_err(|e| SignatureAlgorithmError::HashError(format!("Failed to hash types: {}", e)))?;
-        
         let value_hash = Serializer::hash(&data.value)
             .map_err(|e| SignatureAlgorithmError::HashError(format!("Failed to hash value: {}", e)))?;
-        
-        // Construct the EIP-712 message hash
-        // Format: keccak256("\x19\x01" + domainHash + messageHash)
-        // where messageHash combines types and value
+
         let mut eip712_message = Vec::new();
         eip712_message.extend_from_slice(b"\x19\x01");
         eip712_message.extend_from_slice(&domain_hash);
-        
-        // For the message hash, we combine types and value
+
         let mut message_data = Vec::new();
         message_data.extend_from_slice(&types_hash);
         message_data.extend_from_slice(&value_hash);
-        
-        // Hash the combined message data
+
         let mut hasher = Keccak256::new();
         hasher.update(&message_data);
         let message_hash = hasher.finalize();
-        
-        // Append to EIP-712 message
+
         eip712_message.extend_from_slice(&message_hash);
-        
-        // Hash the final EIP-712 message
+
         let mut final_hasher = Keccak256::new();
         final_hasher.update(&eip712_message);
+
         let final_hash = final_hasher.finalize();
-        
         let mut hash_array = [0u8; 32];
         hash_array.copy_from_slice(&final_hash);
         Ok(hash_array)
     }
 }
 
-/// Transaction hasher implementation - uses Transaction
-/// 
-/// This hasher serializes transactions and hashes them with Keccak-256.
-/// The signature uses EIP-155 encoding where v = chain_id * 2 + 35 + recovery_id.
+/// EIP-155; `v = chain_id*2+35+recovery_id`.
 pub struct TransactionHasher;
 
 impl TransactionHasher {
-    /// Serializes a transaction to bytes for hashing.
     fn serialize_transaction(tx: &Transaction) -> Result<Vec<u8>, SignatureAlgorithmError> {
-        // Validate the address
         tx.to.validate()
             .map_err(|e| SignatureAlgorithmError::HashError(e.to_string()))?;
-        
         let mut bytes = Vec::new();
-        
-        // Serialize nonce (8 bytes, big-endian, use 0 if None)
+
         let nonce = tx.nonce.unwrap_or(0);
         bytes.extend_from_slice(&nonce.to_be_bytes());
-        
-        // Serialize max_fee_per_gas (8 bytes, big-endian, use 0 if None)
+
         let max_fee_per_gas = tx.max_fee_per_gas.unwrap_or(0);
         bytes.extend_from_slice(&max_fee_per_gas.to_be_bytes());
-        
-        // Serialize max_priority_fee (8 bytes, big-endian, use 0 if None)
+
         let max_priority_fee = tx.max_priority_fee.unwrap_or(0);
         bytes.extend_from_slice(&max_priority_fee.to_be_bytes());
-        
-        // Serialize gas_limit (8 bytes, big-endian, use 0 if None)
+
         let gas_limit = tx.gas_limit.unwrap_or(0);
         bytes.extend_from_slice(&gas_limit.to_be_bytes());
-        
-        // Serialize to address (20 bytes)
+
         let addr_str = tx.to.value.strip_prefix("0x").unwrap_or(&tx.to.value);
+        
         let addr_bytes = hex::decode(addr_str)
             .map_err(|e| SignatureAlgorithmError::HashError(
                 format!("Failed to decode validated address: {}", e)
             ))?;
+
         bytes.extend_from_slice(&addr_bytes);
-        
-        // Serialize value (use raw amount from TokenAmount, 16 bytes for u128)
         bytes.extend_from_slice(&tx.value.raw.to_be_bytes());
-        
-        // Serialize data (length + data)
         bytes.extend_from_slice(&(tx.data.len() as u32).to_be_bytes());
         bytes.extend_from_slice(&tx.data);
-        
-        // Serialize chain_id (8 bytes, big-endian)
         bytes.extend_from_slice(&tx.chain_id.to_be_bytes());
-        
         Ok(bytes)
     }
 }
@@ -290,49 +220,32 @@ impl SignatureHasher for TransactionHasher {
     type Data = Transaction;
     
     fn compute_hash(&self, tx: &Transaction) -> Result<[u8; 32], SignatureAlgorithmError> {
-        // Serialize transaction for hashing
         let tx_bytes = Self::serialize_transaction(tx)?;
-        
-        // Hash the transaction bytes with Keccak-256
         let mut hasher = Keccak256::new();
         hasher.update(&tx_bytes);
+
         let hash = hasher.finalize();
-        
         let mut hash_array = [0u8; 32];
         hash_array.copy_from_slice(&hash);
         Ok(hash_array)
     }
-    
-    /// Signs the transaction using EIP-155 encoding.
-    /// 
-    /// For transactions, v = chain_id * 2 + 35 + recovery_id (EIP-155)
-    /// instead of the standard v = 27 + recovery_id.
+
     fn sign(&self, signing_key: &SigningKey, tx: &Transaction) -> Result<Signature, SignatureAlgorithmError> {
-        // Compute the hash
         let hash = self.compute_hash(tx)?;
-        
-        // Sign with recovery id
         let (signature, recovery_id) = signing_key
             .sign_prehash_recoverable(&hash)
             .map_err(|e| SignatureAlgorithmError::SigningError(e.to_string()))?;
-        
-        // Get the signature bytes (r, s components)
+            
         let sig_bytes = signature.to_bytes();
-        
-        // Extract r and s components (each 32 bytes)
         let mut r = [0u8; 32];
         let mut s = [0u8; 32];
         r.copy_from_slice(&sig_bytes[0..32]);
         s.copy_from_slice(&sig_bytes[32..64]);
-        
-        // v is chain_id * 2 + 35 + recovery_id for EIP-155 transactions
         let v = (tx.chain_id * 2 + 35 + recovery_id.to_byte() as u64) as u8;
-        
         Ok(Signature::new(r, s, v))
     }
 }
 
-/// Sign data using the appropriate algorithm (runtime dispatch based on SignatureData)
 pub fn sign_with_algorithm(
     signing_key: &SigningKey,
     data: &SignatureData,
@@ -354,8 +267,6 @@ pub fn sign_with_algorithm(
     }
 }
 
-/// Verify signature and recover signer (runtime dispatch based on SignatureData)
-/// Verifies that the recovered signer matches the expected signer address
 pub fn verify_and_recover_with_algorithm(
     data: &SignatureData,
     signature: &Signature,
@@ -376,8 +287,6 @@ pub fn verify_and_recover_with_algorithm(
             hasher.verify_and_recover(&typed_data, signature)?
         }
     };
-    
-    // Verify that the recovered signer matches the expected signer
     if recovered_signer.lower() != expected_signer.lower() {
         return Err(SignatureAlgorithmError::SignerMismatch);
     }
@@ -385,7 +294,6 @@ pub fn verify_and_recover_with_algorithm(
     Ok(recovered_signer)
 }
 
-/// Recover signer address from signature without verification (runtime dispatch based on SignatureData)
 pub fn recover_signer_with_algorithm(
     data: &SignatureData,
     signature: &Signature,
@@ -407,7 +315,6 @@ pub fn recover_signer_with_algorithm(
     }
 }
 
-/// Compute hash using the appropriate algorithm (runtime dispatch based on SignatureData)
 pub fn compute_hash_with_algorithm(
     data: &SignatureData,
 ) -> Result<[u8; 32], SignatureAlgorithmError> {
@@ -428,58 +335,18 @@ pub fn compute_hash_with_algorithm(
     }
 }
 
-/// Derives a public key (VerifyingKey) from a private key (SigningKey).
-/// 
-/// Takes a `SigningKey` (which represents a private key in k256) and derives
-/// the corresponding public key (`VerifyingKey`).
-/// 
-/// # Arguments
-/// * `signing_key` - The private key as a `SigningKey`
-/// 
-/// # Returns
-/// The corresponding public key as a `VerifyingKey`
-/// 
-/// # Examples
-/// ```
-/// # use k256::ecdsa::SigningKey;
-/// # use peanut_task::core::signature_algorithms::derive_public_key_from_private_key;
-/// // Create a test signing key from bytes (using a valid secp256k1 key)
-/// let key_bytes: [u8; 32] = [
-///     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-///     0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-///     0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-///     0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
-/// ];
-/// let signing_key = SigningKey::from_bytes((&key_bytes).into()).unwrap();
-/// let public_key = derive_public_key_from_private_key(&signing_key);
-/// ```
 pub fn derive_public_key_from_private_key(signing_key: &SigningKey) -> VerifyingKey {
     *signing_key.verifying_key()
 }
 
-/// Derives an Ethereum address from a public key.
-/// 
-/// Takes a `VerifyingKey` (which is the public key type in k256) and derives
-/// the Ethereum address by hashing the public key with Keccak-256 and taking
-/// the last 20 bytes.
 pub fn derive_address_from_public_key(public_key: &VerifyingKey) -> Address {
-    // Get the uncompressed public key bytes (65 bytes: 0x04 + X + Y coordinates)
     let public_key_bytes = public_key.to_encoded_point(false);
-    
-    // Skip the first byte (0x04 prefix) and hash the remaining 64 bytes with Keccak-256
     let public_key_slice = &public_key_bytes.as_bytes()[1..];
     let mut hasher = Keccak256::new();
     hasher.update(public_key_slice);
     let hash = hasher.finalize();
-    
-    // Take the last 20 bytes of the hash
     let address_bytes = &hash[12..];
-    
-    // Format as hex string with 0x prefix
     let address_hex = format!("0x{}", hex::encode(address_bytes));
-    
-    // Create address with validation and checksumming
-    // This should never fail for a properly derived address, but we validate for safety
     Address::from_string(&address_hex)
         .expect("Derived address failed validation - this indicates a bug in address derivation")
 }
