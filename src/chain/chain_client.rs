@@ -16,7 +16,6 @@ pub enum ChainClientCreationError {
     TokioRuntimeError(String),
 }
 
-/// Tries `rpc_urls` in order on failure.
 pub struct ChainClient {
     rpc_urls: Vec<RpcUrl>,
     timeout: u64,
@@ -54,11 +53,7 @@ impl ChainClient {
                 }
             }
         }
-        
-        // All endpoints failed
-        Err(last_error
-            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
-            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
+        Err(ChainClientError::all_endpoints_failed(last_error))
     }
 
     fn try_get_balance_from_url(
@@ -96,9 +91,7 @@ impl ChainClient {
                 }
             }
         }
-        Err(last_error
-            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
-            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
+        Err(ChainClientError::all_endpoints_failed(last_error))
     }
 
     fn try_get_nonce_from_url(
@@ -131,9 +124,7 @@ impl ChainClient {
                 }
             }
         }
-        Err(last_error
-            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
-            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
+        Err(ChainClientError::all_endpoints_failed(last_error))
     }
 
     fn try_get_gas_price_from_url(
@@ -200,9 +191,7 @@ impl ChainClient {
                 }
             }
         }
-        Err(last_error
-            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
-            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
+        Err(ChainClientError::all_endpoints_failed(last_error))
     }
 
     fn try_estimate_gas_from_url(
@@ -254,9 +243,7 @@ impl ChainClient {
                 }
             }
         }
-        Err(last_error
-            .map(|e| ChainClientError::AllEndpointsFailed(e.to_string()))
-            .unwrap_or_else(|| ChainClientError::AllEndpointsFailed("No endpoints attempted".to_string())))
+        Err(ChainClientError::all_endpoints_failed(last_error))
     }
 
     fn try_call_from_url(
@@ -301,7 +288,6 @@ fn parse_block_id(block: &str) -> Result<BlockId, ChainClientError> {
     }
 }
 
-/// `priority_fee_*` from 25/50/75 percentiles of `eth_feeHistory`.
 #[derive(Debug, Clone)]
 pub struct GasPrice {
     pub base_fee: u64,
@@ -352,4 +338,15 @@ pub enum ChainClientError {
     
     #[error("Invalid priority level: {0}")]
     InvalidPriority(String),
+}
+
+impl ChainClientError {
+    /// `last_error`: most recent failure from the try loop; uses "No endpoints attempted" if `None`.
+    pub fn all_endpoints_failed<E: std::fmt::Display>(last_error: Option<E>) -> Self {
+        ChainClientError::AllEndpointsFailed(
+            last_error
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "No endpoints attempted".to_string()),
+        )
+    }
 }
