@@ -1,7 +1,9 @@
 use std::fmt;
 use thiserror::Error;
 use sha3::{Digest, Keccak256};
-use alloy::primitives::Address as AlloyAddress;
+use alloy::network::TransactionBuilder;
+use alloy::primitives::{Address as AlloyAddress, Bytes, U256};
+use alloy::rpc::types::TransactionRequest;
 
 use super::token_amount::TokenAmount;
 
@@ -168,6 +170,27 @@ impl Default for Transaction {
 }
 
 impl Transaction {
+    /// Builds an alloy `TransactionRequest` for `eth_call`, `eth_estimateGas`, `eth_sendTransaction`.
+    pub fn to_transaction_request(&self) -> TransactionRequest {
+        let mut req = TransactionRequest::default()
+            .with_to(self.to.alloy_address())
+            .with_value(U256::from(self.value.raw))
+            .with_input(Bytes::from(self.data.clone()));
+        if let Some(n) = self.nonce {
+            req = req.with_nonce(n);
+        }
+        if let Some(g) = self.gas_limit {
+            req = req.with_gas_limit(g);
+        }
+        if let Some(m) = self.max_fee_per_gas {
+            req = req.with_max_fee_per_gas(m.into());
+        }
+        if let Some(m) = self.max_priority_fee {
+            req = req.with_max_priority_fee_per_gas(m.into());
+        }
+        req
+    }
+
     /// Web3-style JSON with hex-encoded values.
     pub fn to_dict(&self) -> serde_json::Value {
         use serde_json::json;

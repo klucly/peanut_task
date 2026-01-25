@@ -6,7 +6,7 @@ Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transactio
 
 ## Core
 
-- **utility**: `Address` (EIP-55 checksum on creation), `Message` (EIP-191), `TypedData` (EIP-712), `Transaction`, `SignedTransaction`. `Transaction::to_dict` → web3-style JSON with hex-encoded values.
+- **utility**: `Address` (EIP-55 checksum on creation), `Message` (EIP-191), `TypedData` (EIP-712), `Transaction`, `SignedTransaction`. `Transaction::to_dict` → web3-style JSON with hex-encoded values. `Transaction::to_transaction_request` → alloy `TransactionRequest` for `eth_call` / `eth_estimateGas` / `eth_sendTransaction`.
 - **signatures**: `Signature` (r,s,v), `SignedMessage` — only constructible via `SignedMessage::new(..., expected_signer)`, which verifies before creating.
 - **token_amount**: `raw` (smallest unit) + `decimals`; `from_human` / `human` for decimal string; no floats.
 - **transaction_receipt**: `from_web3` parses hex or numeric for numeric fields. `tx_fee()` = `gas_used * effective_gas_price` as `TokenAmount` (18 decimals, ETH).
