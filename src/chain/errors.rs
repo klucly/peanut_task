@@ -1,5 +1,3 @@
-use thiserror::Error;
-
 #[derive(Debug, thiserror::Error)]
 pub enum ChainClientCreationError {
     #[error("No RPC URLs provided")]

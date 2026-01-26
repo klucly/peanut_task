@@ -1,6 +1,6 @@
 use tokio::time::{sleep, Duration, Instant};
 use alloy::primitives::B256;
-use alloy::providers::ProviderBuilder;
+use alloy::providers::{Provider, ProviderBuilder};
 use serde_json;
 use crate::chain::{RpcUrl, errors::ChainClientError};
 use crate::core::base_types::TransactionReceipt;

@@ -27,6 +27,7 @@ pub enum RpcUrlValidationError {
 }
 
 /// Template with exactly one `{}`; key stored separately; Display/Debug use `****`.
+#[derive(Clone)]
 pub struct RpcUrl {
     url_template: String,
     api_key: String,
