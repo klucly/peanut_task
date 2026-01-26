@@ -5,17 +5,7 @@ use alloy::primitives::{Address as AlloyAddress, B256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{BlockId, BlockNumberOrTag, TransactionRequest};
 use tokio::runtime::Runtime;
-use crate::chain::RpcUrl;
-use hex;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ChainClientCreationError {
-    #[error("No RPC URLs provided")]
-    NoRpcUrlsProvided,
-    
-    #[error("Failed to create Tokio runtime: {0}")]
-    TokioRuntimeError(String),
-}
+use crate::chain::{RpcUrl, errors::{ChainClientError, ChainClientCreationError}, gas_price::GasPrice, parsers::{parse_tx_hash, parse_block_id}, receipt_polling::poll_for_receipt};
 
 pub struct ChainClient {
     rpc_urls: Vec<RpcUrl>,
@@ -241,13 +231,18 @@ impl ChainClient {
         })
     }
 
+    /// Polls for receipt until found or timeout; `timeout` in seconds, `poll_interval` in seconds.
     pub fn wait_for_receipt(
         &self,
-        _tx_hash: &str,
-        _timeout: u64,
-        _poll_interval: f64,
+        tx_hash: &str,
+        timeout: u64,
+        poll_interval: f64,
     ) -> Result<TransactionReceipt, ChainClientError> {
-        todo!()
+        let hash = parse_tx_hash(tx_hash)?;
+        let rpc_urls = self.rpc_urls.clone();
+        self.runtime.block_on(async {
+            poll_for_receipt(rpc_urls, hash, timeout, poll_interval).await
+        })
     }
 
     /// Returns transaction data; returns `TransactionNotFound` if not found.
@@ -292,8 +287,30 @@ impl ChainClient {
         })
     }
 
-    pub fn get_receipt(&self, _tx_hash: &str) -> Result<Option<TransactionReceipt>, ChainClientError> {
-        todo!()
+    pub fn get_receipt(&self, tx_hash: &str) -> Result<Option<TransactionReceipt>, ChainClientError> {
+        let hash = parse_tx_hash(tx_hash)?;
+        let mut last_error = None;
+
+        for rpc_url in &self.rpc_urls {
+            match self.try_get_receipt_from_url(rpc_url, hash) {
+                Ok(receipt) => return Ok(receipt),
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
+        Err(ChainClientError::all_endpoints_failed(last_error))
+    }
+
+    fn try_get_receipt_from_url(
+        &self,
+        rpc_url: &RpcUrl,
+        hash: B256,
+    ) -> Result<Option<TransactionReceipt>, ChainClientError> {
+        self.runtime.block_on(async {
+            crate::chain::receipt_polling::try_get_receipt_from_url_async(rpc_url, hash).await
+        })
     }
 
     pub fn call(&self, tx: &Transaction, block: &str) -> Result<Vec<u8>, ChainClientError> {
@@ -328,115 +345,5 @@ impl ChainClient {
                 .map_err(|e| ChainClientError::RpcError(format!("eth_call failed: {}", e)))?;
             Ok(result.to_vec())
         })
-    }
-}
-
-fn parse_tx_hash(tx_hash: &str) -> Result<B256, ChainClientError> {
-    if !tx_hash.starts_with("0x") {
-        return Err(ChainClientError::InvalidResponse(
-            format!("Transaction hash must start with '0x': {}", tx_hash)
-        ));
-    }
-    let hex_part = &tx_hash[2..];
-    if hex_part.len() != 64 {
-        return Err(ChainClientError::InvalidResponse(
-            format!("Transaction hash must be 64 hex characters (32 bytes): got {} characters", hex_part.len())
-        ));
-    }
-    let bytes = hex::decode(hex_part)
-        .map_err(|e| ChainClientError::InvalidResponse(
-            format!("Invalid transaction hash hex '{}': {}", tx_hash, e)
-        ))?;
-    if bytes.len() != 32 {
-        return Err(ChainClientError::InvalidResponse(
-            format!("Transaction hash must be 32 bytes: got {} bytes", bytes.len())
-        ));
-    }
-    Ok(B256::from_slice(&bytes))
-}
-
-fn parse_block_id(block: &str) -> Result<BlockId, ChainClientError> {
-    match block.to_lowercase().as_str() {
-        "latest" => Ok(BlockId::Number(BlockNumberOrTag::Latest)),
-        "pending" => Ok(BlockId::Number(BlockNumberOrTag::Pending)),
-        "earliest" => Ok(BlockId::Number(BlockNumberOrTag::Earliest)),
-        _ => {
-            if let Some(hex_str) = block.strip_prefix("0x") {
-                u64::from_str_radix(hex_str, 16)
-                    .map(|n| BlockId::Number(BlockNumberOrTag::Number(n)))
-                    .map_err(|_| ChainClientError::InvalidResponse(
-                        format!("Invalid block number (hex): {}", block)
-                    ))
-            } else {
-                block.parse::<u64>()
-                    .map(|n| BlockId::Number(BlockNumberOrTag::Number(n)))
-                    .map_err(|_| ChainClientError::InvalidResponse(
-                        format!("Invalid block identifier: {}", block)
-                    ))
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct GasPrice {
-    pub base_fee: u64,
-    pub priority_fee_low: u64,
-    pub priority_fee_medium: u64,
-    pub priority_fee_high: u64,
-}
-
-impl GasPrice {
-    pub fn new(
-        base_fee: u64,
-        priority_fee_low: u64,
-        priority_fee_medium: u64,
-        priority_fee_high: u64,
-    ) -> Self {
-        Self {
-            base_fee,
-            priority_fee_low,
-            priority_fee_medium,
-            priority_fee_high,
-        }
-    }
-
-    pub fn get_max_fee(&self, priority: &str, buffer: f64) -> Result<u64, ChainClientError> {
-        todo!()
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ChainClientError {
-    #[error("RPC request failed: {0}")]
-    RpcError(String),
-    
-    #[error("Network error: {0}")]
-    NetworkError(String),
-    
-    #[error("Timeout error: {0}")]
-    TimeoutError(String),
-    
-    #[error("Invalid response: {0}")]
-    InvalidResponse(String),
-    
-    #[error("All RPC endpoints failed: {0}")]
-    AllEndpointsFailed(String),
-    
-    #[error("Transaction not found: {0}")]
-    TransactionNotFound(String),
-    
-    #[error("Invalid priority level: {0}")]
-    InvalidPriority(String),
-}
-
-impl ChainClientError {
-    /// `last_error`: most recent failure from the try loop; uses "No endpoints attempted" if `None`.
-    pub fn all_endpoints_failed<E: std::fmt::Display>(last_error: Option<E>) -> Self {
-        ChainClientError::AllEndpointsFailed(
-            last_error
-                .map(|e| e.to_string())
-                .unwrap_or_else(|| "No endpoints attempted".to_string()),
-        )
     }
 }
