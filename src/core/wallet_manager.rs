@@ -131,37 +131,6 @@ impl WalletManager {
     pub fn sign_transaction(&self, tx: Transaction) -> Result<SignedTransaction, TransactionError> {
         let signature = TransactionHasher.sign(self.get_signing_key(), &tx)
             .map_err(|e| TransactionError::InvalidAddress(format!("Failed to sign transaction: {}", e)))?;
-        Ok(SignedTransaction(self.create_raw_transaction(&tx, signature.r, signature.s, signature.v)))
-    }
-    
-    fn create_raw_transaction(&self, tx: &Transaction, r: [u8; 32], s: [u8; 32], v: u8) -> String {
-        let mut parts = Vec::new();
-        
-        parts.push(format!("\"to\":\"{}\"", tx.to.value));
-        parts.push(format!("\"value\":\"0x{:x}\"", tx.value.raw));
-        parts.push(format!("\"data\":\"0x{}\"", hex::encode(&tx.data)));
-        parts.push(format!("\"chainId\":{}", tx.chain_id));
-        
-        if let Some(nonce) = tx.nonce {
-            parts.push(format!("\"nonce\":\"0x{:x}\"", nonce));
-        }
-        
-        if let Some(gas_limit) = tx.gas_limit {
-            parts.push(format!("\"gas\":\"0x{:x}\"", gas_limit));
-        }
-        
-        if let Some(max_fee_per_gas) = tx.max_fee_per_gas {
-            parts.push(format!("\"maxFeePerGas\":\"0x{:x}\"", max_fee_per_gas));
-        }
-        
-        if let Some(max_priority_fee) = tx.max_priority_fee {
-            parts.push(format!("\"maxPriorityFeePerGas\":\"0x{:x}\"", max_priority_fee));
-        }
-        
-        parts.push(format!("\"v\":{}", v));
-        parts.push(format!("\"r\":\"0x{}\"", hex::encode(&r)));
-        parts.push(format!("\"s\":\"0x{}\"", hex::encode(&s)));
-        
-        format!("{{{}}}", parts.join(","))
+        Ok(SignedTransaction::new(&tx, &signature))
     }
 }

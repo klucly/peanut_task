@@ -6,7 +6,7 @@ Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transactio
 
 ## Core
 
-- **utility**: `Address` (EIP-55 checksum on creation), `Message` (EIP-191), `TypedData` (EIP-712), `Transaction`, `SignedTransaction`. `Transaction::to_dict` → web3-style JSON with hex-encoded values. `Transaction::to_transaction_request` → alloy `TransactionRequest` for `eth_call` / `eth_estimateGas` / `eth_sendTransaction`.
+- **utility**: `Address` (EIP-55 checksum on creation), `Message` (EIP-191), `TypedData` (EIP-712), `Transaction`, `SignedTransaction`. `SignedTransaction::new(tx, sig)` RLP-encodes EIP-1559 signed tx; `SignedTransaction::from_raw(hex)` validates hex decodes to bytes. `hex()` returns 0x-prefixed hex, `raw()` returns bytes. `Transaction::to_dict` → web3-style JSON with hex-encoded values. `Transaction::to_transaction_request` → alloy `TransactionRequest` for `eth_call` / `eth_estimateGas` / `eth_sendTransaction`.
 - **signatures**: `Signature` (r,s,v), `SignedMessage` — only constructible via `SignedMessage::new(..., expected_signer)`, which verifies before creating.
 - **token_amount**: `raw` (smallest unit) + `decimals`; `from_human` / `human` for decimal string; no floats.
 - **transaction_receipt**: `from_web3` parses hex or numeric for numeric fields. `tx_fee()` = `gas_used * effective_gas_price` as `TokenAmount` (18 decimals, ETH).
@@ -18,7 +18,7 @@ Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transactio
 ## Chain
 
 - **url_wrapper**: `RpcUrl` — template with `{}` + separate API key; Display/Debug show redacted (`****`). `as_url()` for full URL; `validate()` does `get_chain_id` as connectivity check.
-- **chain_client**: `ChainClient::new(rpc_urls, timeout_sec, max_retries)`. Tries `rpc_urls` in order on failure. `get_nonce(addr, block)`: `block` = `"latest"`|`"pending"`|`"earliest"` or block number. `call(tx, block)`: `eth_call` — simulates tx at `block`, returns return data or errors if the call would revert. `GasPrice`: `priority_fee_*` from `eth_feeHistory` 25/50/75 percentiles.
+- **chain_client**: `ChainClient::new(rpc_urls, timeout_sec, max_retries)`. Tries `rpc_urls` in order on failure. `get_nonce(addr, block)`: `block` = `"latest"`|`"pending"`|`"earliest"` or block number. `send_transaction(signed_tx)`: `eth_sendRawTransaction` — `SignedTransaction` (0x-hex of RLP), returns tx hash (0x-hex). `call(tx, block)`: `eth_call` — simulates tx at `block`, returns return data or errors if the call would revert. `GasPrice`: `priority_fee_*` from `eth_feeHistory` 25/50/75 percentiles.
 
 ## Dependencies
 

@@ -2,10 +2,13 @@ use std::fmt;
 use thiserror::Error;
 use sha3::{Digest, Keccak256};
 use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address as AlloyAddress, Bytes, U256};
+use alloy::consensus::transaction::{SignableTransaction, TxEip1559};
+use alloy::eips::eip2718::Encodable2718;
+use alloy::primitives::{Address as AlloyAddress, Bytes, B256, Signature as AlloySignature, TxKind, U256};
 use alloy::rpc::types::TransactionRequest;
 
 use super::token_amount::TokenAmount;
+use super::signatures::Signature;
 
 #[derive(Clone)]
 pub struct Address {
@@ -222,4 +225,72 @@ impl Transaction {
     }
 }
 
-pub struct SignedTransaction(pub String);
+#[derive(Error, Debug)]
+pub enum SignedTransactionError {
+    #[error("SignedTransaction hex must start with '0x', got: {0}")]
+    MissingPrefix(String),
+    
+    #[error("Failed to decode SignedTransaction hex: {0}")]
+    InvalidHex(String),
+}
+
+/// 0x-prefixed hex of EIP-2718 RLP-encoded signed tx. From `WalletManager::sign_transaction`.
+#[derive(Debug, Clone)]
+pub struct SignedTransaction {
+    hex: String,
+    raw: Vec<u8>,
+}
+
+impl SignedTransaction {
+    /// Builds from `Transaction` + `Signature`; RLP-encodes EIP-1559 signed tx.
+    pub fn new(tx: &Transaction, sig: &Signature) -> Self {
+        // EIP-155: v = chain_id*2+35+recovery_id. y_parity = recovery_id (0 or 1).
+        let parity = if sig.v == 27 || sig.v == 28 {
+            sig.v == 28
+        } else {
+            ((sig.v as u64).saturating_sub(35)) % 2 == 1
+        };
+
+        let tx_eip = TxEip1559 {
+            chain_id: tx.chain_id,
+            nonce: tx.nonce.unwrap_or(0),
+            gas_limit: tx.gas_limit.unwrap_or(0),
+            max_fee_per_gas: tx.max_fee_per_gas.unwrap_or(0) as u128,
+            max_priority_fee_per_gas: tx.max_priority_fee.unwrap_or(0) as u128,
+            to: TxKind::Call(tx.to.alloy_address()),
+            value: U256::from(tx.value.raw),
+            access_list: Default::default(),
+            input: Bytes::from(tx.data.clone()),
+        };
+        let alloy_sig = AlloySignature::from_scalars_and_parity(
+            B256::from_slice(&sig.r),
+            B256::from_slice(&sig.s),
+            parity,
+        );
+        let signed = tx_eip.into_signed(alloy_sig);
+        let raw = signed.encoded_2718();
+        let hex = format!("0x{}", hex::encode(&raw));
+        SignedTransaction { hex, raw }
+    }
+
+    /// Validates hex can be decoded to bytes; stores both.
+    pub fn from_raw(hex: String) -> Result<Self, SignedTransactionError> {
+        if !hex.starts_with("0x") {
+            return Err(SignedTransactionError::MissingPrefix(hex));
+        }
+        let hex_part = hex.trim_start_matches("0x");
+        let raw = hex::decode(hex_part)
+            .map_err(|e| SignedTransactionError::InvalidHex(format!("{}: {}", hex, e)))?;
+        Ok(SignedTransaction { hex, raw })
+    }
+    
+    /// Returns 0x-prefixed hex string.
+    pub fn hex(&self) -> &str {
+        &self.hex
+    }
+    
+    /// Returns decoded bytes (no validation needed).
+    pub fn raw(&self) -> &[u8] {
+        &self.raw
+    }
+}

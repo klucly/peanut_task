@@ -1,5 +1,5 @@
 pub use super::utility::{
-    Address, AddressError, Message, TypedData, Transaction, SignedTransaction
+    Address, AddressError, Message, TypedData, Transaction, SignedTransaction, SignedTransactionError
 };
 
 pub use super::signatures::{

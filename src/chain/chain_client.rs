@@ -1,5 +1,5 @@
 use crate::core::base_types::{
-    Address, TokenAmount, Transaction, TransactionReceipt
+    Address, SignedTransaction, TokenAmount, Transaction, TransactionReceipt
 };
 use alloy::primitives::Address as AlloyAddress;
 use alloy::providers::{Provider, ProviderBuilder};
@@ -208,8 +208,36 @@ impl ChainClient {
         })
     }
 
-    pub fn send_transaction(&self, _signed_tx: &[u8]) -> Result<String, ChainClientError> {
-        todo!()
+    pub fn send_transaction(&self, signed_tx: &SignedTransaction) -> Result<String, ChainClientError> {
+        let mut last_error = None;
+        for rpc_url in &self.rpc_urls {
+            match self.try_send_raw_transaction_from_url(rpc_url, signed_tx.raw()) {
+                Ok(tx_hash) => return Ok(tx_hash),
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
+        Err(ChainClientError::all_endpoints_failed(last_error))
+    }
+
+    fn try_send_raw_transaction_from_url(
+        &self,
+        rpc_url: &RpcUrl,
+        signed_tx: &[u8],
+    ) -> Result<String, ChainClientError> {
+        self.runtime.block_on(async {
+            let parsed_url = rpc_url.as_url().clone();
+            let provider = ProviderBuilder::new().connect_http(parsed_url);
+            let pending = provider
+                .send_raw_transaction(signed_tx)
+                .await
+                .map_err(|e| {
+                    ChainClientError::RpcError(format!("eth_sendRawTransaction failed: {}", e))
+                })?;
+            Ok(format!("0x{:x}", pending.tx_hash()))
+        })
     }
 
     pub fn wait_for_receipt(
@@ -229,7 +257,6 @@ impl ChainClient {
         todo!()
     }
 
-    /// Simulates transaction without sending; executes at `block`, returns return data or errors if the call would revert.
     pub fn call(&self, tx: &Transaction, block: &str) -> Result<Vec<u8>, ChainClientError> {
         let block_id = parse_block_id(block)?;
         let tx_request = tx.to_transaction_request();
