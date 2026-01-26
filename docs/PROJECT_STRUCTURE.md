@@ -2,23 +2,70 @@
 
 ## Overview
 
-Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transaction handling, and RPC. Uses `k256` (secp256k1), Keccak-256, canonical JSON for EIP-712.
+Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transaction handling, and RPC.
 
 ## Core
 
-- **utility**: `Address` (EIP-55 checksum on creation), `Message` (EIP-191), `TypedData` (EIP-712), `Transaction`, `SignedTransaction`. `SignedTransaction::new(tx, sig)` RLP-encodes EIP-1559 signed tx; `SignedTransaction::from_raw(hex)` validates hex decodes to bytes. `hex()` returns 0x-prefixed hex, `raw()` returns bytes. `Transaction::to_dict` → web3-style JSON with hex-encoded values. `Transaction::to_transaction_request` → alloy `TransactionRequest` for `eth_call` / `eth_estimateGas` / `eth_sendTransaction`.
-- **signatures**: `Signature` (r,s,v), `SignedMessage` — only constructible via `SignedMessage::new(..., expected_signer)`, which verifies before creating.
-- **token_amount**: `raw` (smallest unit) + `decimals`; `from_human` / `human` for decimal string; no floats.
-- **transaction_receipt**: `from_web3` parses hex or numeric for numeric fields. `tx_fee()` = `gas_used * effective_gas_price` as `TokenAmount` (18 decimals, ETH).
-- **base_types**: Re-exports from utility, signatures, token_amount, transaction_receipt.
-- **serializer**: Canonical JSON (keys sorted, no whitespace) + Keccak-256. Used for EIP-712; determinism required.
-- **signature_algorithms**: `SignatureHasher` (compute_hash, sign, verify_and_recover). `Eip191Hasher` (personal sign), `Eip712Hasher` (typed data), `TransactionHasher` (EIP-155: `v = chain_id*2+35+recovery_id`). Address = last 20 bytes of Keccak( uncompressed pubkey without 0x04 ).
-- **wallet_manager**: Holds `SigningKey`; no direct key access. `from_hex_string`, `from_env`, `generate`; `sign_message` (EIP-191), `sign_typed_data` (EIP-712), `sign_transaction`.
+### utility
+- `Address::from_string`, `checksum`, `lower`, `validate`, `alloy_address`
+- `Message`
+- `TypedData::new`
+- `Transaction::to_transaction_request`, `to_dict`, `from_web3`
+- `SignedTransaction::new` (RLP-encodes EIP-1559), `from_raw`, `hex`, `raw`
+
+### signatures
+- `Signature::new`, `to_bytes`, `to_hex`
+- `SignedMessage::new` (verifies before creating), `verify`, `recover_signer`, `algorithm`
+
+### token_amount
+- `TokenAmount::new`, `from_human`, `human` (no floats), `try_add`, `try_mul`
+
+### transaction_receipt
+- `TransactionReceipt::from_web3` (parses hex or numeric), `tx_fee`
+- `Log`
+
+### serializer
+- `Serializer::serialize` (canonical JSON), `hash`, `verify_determinism`
+
+### signature_algorithms
+- `Eip191Hasher`, `Eip712Hasher`, `TransactionHasher` (EIP-155)
+- `sign_with_algorithm`, `verify_and_recover_with_algorithm`, `recover_signer_with_algorithm`, `compute_hash_with_algorithm`
+- `derive_public_key_from_private_key`, `derive_address_from_public_key`
+
+### wallet_manager
+- `WalletManager::from_hex_string`, `from_env`, `generate`, `address`, `public_key`
+- `sign_message` (EIP-191), `sign_typed_data` (EIP-712), `sign_transaction`
+
+### base_types
+Re-exports from utility, signatures, token_amount, transaction_receipt.
 
 ## Chain
 
-- **url_wrapper**: `RpcUrl` — template with `{}` + separate API key; Display/Debug show redacted (`****`). `as_url()` for full URL; `validate()` does `get_chain_id` as connectivity check.
-- **chain_client**: `ChainClient::new(rpc_urls, timeout_sec, max_retries)`. Tries `rpc_urls` in order on failure. `get_nonce(addr, block)`: `block` = `"latest"`|`"pending"`|`"earliest"` or block number. `send_transaction(signed_tx)`: `eth_sendRawTransaction` — `SignedTransaction` (0x-hex of RLP), returns tx hash (0x-hex). `call(tx, block)`: `eth_call` — simulates tx at `block`, returns return data or errors if the call would revert. `GasPrice`: `priority_fee_*` from `eth_feeHistory` 25/50/75 percentiles.
+### url_wrapper
+- `RpcUrl::new` (template with exactly one `{}`), `as_url`, `redacted` (Display/Debug show `****`)
+- `validate` (connectivity check via `get_chain_id`)
+
+### errors
+- `ChainClientCreationError`, `ChainClientError`
+- `all_endpoints_failed` (helper for fallback error aggregation)
+
+### gas_price
+- `GasPrice::new`, `get_max_fee`
+- `Priority` (Low/Medium/High)
+
+### parsers
+- `parse_tx_hash` (validates 0x-prefixed 64-char hex)
+- `parse_block_id` (accepts `"latest"`, `"pending"`, `"earliest"`, or block number)
+
+### receipt_polling
+- `poll_for_receipt` (polls all URLs until found or timeout)
+- `try_get_receipt_from_url_async`
+
+### chain_client
+- `ChainClient::new` (requires non-empty `rpc_urls`, creates Tokio runtime; tries URLs in order on failure)
+- `get_balance`, `get_nonce` (accepts `"latest"`, `"pending"`, `"earliest"`, or block number), `get_gas_price`, `estimate_gas`
+- `send_transaction` (`eth_sendRawTransaction`), `wait_for_receipt` (polls until found or timeout)
+- `get_transaction` (returns `TransactionNotFound` if not found), `get_receipt`, `call` (`eth_call`)
 
 ## Dependencies
 
