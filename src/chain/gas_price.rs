@@ -1,4 +1,10 @@
-use crate::chain::errors::ChainClientError;
+/// Priority level for gas fees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Priority {
+    Low,
+    Medium,
+    High,
+}
 
 #[derive(Debug, Clone)]
 pub struct GasPrice {
@@ -23,7 +29,14 @@ impl GasPrice {
         }
     }
 
-    pub fn get_max_fee(&self, priority: &str, buffer: f64) -> Result<u64, ChainClientError> {
-        todo!()
+    pub fn get_max_fee(&self, priority: Priority, buffer: f64) -> u64 {
+        let priority_fee = match priority {
+            Priority::Low => self.priority_fee_low,
+            Priority::Medium => self.priority_fee_medium,
+            Priority::High => self.priority_fee_high,
+        };
+
+        let buffered_base_fee = (self.base_fee as f64 * buffer) as u64;
+        buffered_base_fee + priority_fee
     }
 }
