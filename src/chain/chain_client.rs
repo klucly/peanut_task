@@ -1,11 +1,12 @@
 use crate::core::base_types::{
     Address, SignedTransaction, TokenAmount, Transaction, TransactionReceipt
 };
-use alloy::primitives::Address as AlloyAddress;
+use alloy::primitives::{Address as AlloyAddress, B256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{BlockId, BlockNumberOrTag, TransactionRequest};
 use tokio::runtime::Runtime;
 use crate::chain::RpcUrl;
+use hex;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChainClientCreationError {
@@ -249,8 +250,46 @@ impl ChainClient {
         todo!()
     }
 
-    pub fn get_transaction(&self, _tx_hash: &str) -> Result<serde_json::Value, ChainClientError> {
-        todo!()
+    /// Returns transaction data; returns `TransactionNotFound` if not found.
+    pub fn get_transaction(&self, tx_hash: &str) -> Result<Transaction, ChainClientError> {
+        let hash = parse_tx_hash(tx_hash)?;
+        let mut last_error = None;
+
+        for rpc_url in &self.rpc_urls {
+            match self.try_get_transaction_from_url(rpc_url, hash) {
+                Ok(Some(tx)) => return Ok(tx),
+                Ok(None) => return Err(ChainClientError::TransactionNotFound(tx_hash.to_string())),
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
+        Err(ChainClientError::all_endpoints_failed(last_error))
+    }
+
+    fn try_get_transaction_from_url(
+        &self,
+        rpc_url: &RpcUrl,
+        hash: B256,
+    ) -> Result<Option<Transaction>, ChainClientError> {
+        self.runtime.block_on(async {
+            let parsed_url = rpc_url.as_url().clone();
+            let provider = ProviderBuilder::new().connect_http(parsed_url);
+            let tx = provider.get_transaction_by_hash(hash).await
+                .map_err(|e| ChainClientError::RpcError(format!("RPC call failed: {}", e)))?;
+            
+            match tx {
+                Some(tx) => {
+                    let tx_json = serde_json::to_value(tx)
+                        .map_err(|e| ChainClientError::InvalidResponse(format!("Failed to serialize transaction: {}", e)))?;
+                    Transaction::from_web3(tx_json)
+                        .map_err(|e| ChainClientError::InvalidResponse(format!("Failed to parse transaction: {}", e)))
+                        .map(Some)
+                }
+                None => Ok(None),
+            }
+        })
     }
 
     pub fn get_receipt(&self, _tx_hash: &str) -> Result<Option<TransactionReceipt>, ChainClientError> {
@@ -290,6 +329,30 @@ impl ChainClient {
             Ok(result.to_vec())
         })
     }
+}
+
+fn parse_tx_hash(tx_hash: &str) -> Result<B256, ChainClientError> {
+    if !tx_hash.starts_with("0x") {
+        return Err(ChainClientError::InvalidResponse(
+            format!("Transaction hash must start with '0x': {}", tx_hash)
+        ));
+    }
+    let hex_part = &tx_hash[2..];
+    if hex_part.len() != 64 {
+        return Err(ChainClientError::InvalidResponse(
+            format!("Transaction hash must be 64 hex characters (32 bytes): got {} characters", hex_part.len())
+        ));
+    }
+    let bytes = hex::decode(hex_part)
+        .map_err(|e| ChainClientError::InvalidResponse(
+            format!("Invalid transaction hash hex '{}': {}", tx_hash, e)
+        ))?;
+    if bytes.len() != 32 {
+        return Err(ChainClientError::InvalidResponse(
+            format!("Transaction hash must be 32 bytes: got {} bytes", bytes.len())
+        ));
+    }
+    Ok(B256::from_slice(&bytes))
 }
 
 fn parse_block_id(block: &str) -> Result<BlockId, ChainClientError> {

@@ -9,6 +9,7 @@ use alloy::rpc::types::TransactionRequest;
 
 use super::token_amount::TokenAmount;
 use super::signatures::Signature;
+use hex;
 
 #[derive(Clone)]
 pub struct Address {
@@ -223,6 +224,134 @@ impl Transaction {
         
         dict
     }
+
+    /// Numeric fields may be hex or number.
+    pub fn from_web3(tx: serde_json::Value) -> Result<Self, TransactionParseError> {
+        let obj = tx.as_object()
+            .ok_or_else(|| TransactionParseError::InvalidFormat("Transaction must be a JSON object".to_string()))?;
+
+        let to_str = obj.get("to")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| TransactionParseError::MissingField("to".to_string()))?;
+        let to = Address::from_string(to_str)
+            .map_err(|e| TransactionParseError::InvalidFormat(format!("Invalid 'to' address: {}", e)))?;
+
+        let value_raw = parse_hex_or_number_u128(
+            obj.get("value")
+                .ok_or_else(|| TransactionParseError::MissingField("value".to_string()))?
+        )?;
+        let value = TokenAmount::new(value_raw, 18, Some("ETH".to_string()));
+
+        let data_str = obj.get("input")
+            .or_else(|| obj.get("data"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| TransactionParseError::MissingField("input or data".to_string()))?;
+        let data = parse_hex_bytes(data_str)
+            .map_err(|e| TransactionParseError::InvalidFormat(format!("Invalid data hex: {}", e)))?;
+
+        let chain_id = parse_hex_or_number_u64(
+            obj.get("chainId")
+                .ok_or_else(|| TransactionParseError::MissingField("chainId".to_string()))?
+        )?;
+
+        let nonce = obj.get("nonce")
+            .map(|v| parse_hex_or_number_u64(v))
+            .transpose()?;
+
+        let gas_limit = obj.get("gas")
+            .or_else(|| obj.get("gasLimit"))
+            .map(|v| parse_hex_or_number_u64(v))
+            .transpose()?;
+
+        let max_fee_per_gas = obj.get("maxFeePerGas")
+            .map(|v| parse_hex_or_number_u64(v))
+            .transpose()?;
+
+        let max_priority_fee = obj.get("maxPriorityFeePerGas")
+            .map(|v| parse_hex_or_number_u64(v))
+            .transpose()?;
+
+        Ok(Transaction {
+            to,
+            value,
+            data,
+            nonce,
+            gas_limit,
+            max_fee_per_gas,
+            max_priority_fee,
+            chain_id,
+        })
+    }
+}
+
+fn parse_hex_or_number_u64(value: &serde_json::Value) -> Result<u64, TransactionParseError> {
+    match value {
+        serde_json::Value::String(s) => {
+            let hex_str = if s.starts_with("0x") || s.starts_with("0X") {
+                &s[2..]
+            } else {
+                s
+            };
+            u64::from_str_radix(hex_str, 16)
+                .map_err(|e| TransactionParseError::InvalidFormat(
+                    format!("Invalid hex string '{}': {}", s, e)
+                ))
+        }
+        serde_json::Value::Number(n) => {
+            n.as_u64()
+                .ok_or_else(|| TransactionParseError::InvalidFormat(
+                    format!("Number too large or negative: {}", n)
+                ))
+        }
+        _ => Err(TransactionParseError::InvalidFormat(
+            "Value must be a hex string or number".to_string()
+        ))
+    }
+}
+
+fn parse_hex_or_number_u128(value: &serde_json::Value) -> Result<u128, TransactionParseError> {
+    match value {
+        serde_json::Value::String(s) => {
+            let hex_str = if s.starts_with("0x") || s.starts_with("0X") {
+                &s[2..]
+            } else {
+                s
+            };
+            u128::from_str_radix(hex_str, 16)
+                .map_err(|e| TransactionParseError::InvalidFormat(
+                    format!("Invalid hex string '{}': {}", s, e)
+                ))
+        }
+        serde_json::Value::Number(n) => {
+            n.as_u64()
+                .map(|v| v as u128)
+                .ok_or_else(|| TransactionParseError::InvalidFormat(
+                    format!("Number too large or negative: {}", n)
+                ))
+        }
+        _ => Err(TransactionParseError::InvalidFormat(
+            "Value must be a hex string or number".to_string()
+        ))
+    }
+}
+
+fn parse_hex_bytes(hex_str: &str) -> Result<Vec<u8>, String> {
+    let hex_part = if hex_str.starts_with("0x") || hex_str.starts_with("0X") {
+        &hex_str[2..]
+    } else {
+        hex_str
+    };
+    hex::decode(hex_part)
+        .map_err(|e| format!("Failed to decode hex: {}", e))
+}
+
+#[derive(Error, Debug)]
+pub enum TransactionParseError {
+    #[error("Missing required field: {0}")]
+    MissingField(String),
+    
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
 }
 
 #[derive(Error, Debug)]
