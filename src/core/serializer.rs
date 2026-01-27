@@ -15,9 +15,9 @@ pub enum SerializationError {
 }
 
 /// Canonical JSON (sorted keys, no whitespace) and Keccak-256; for EIP-712.
-pub struct Serializer;
+pub struct DeterministicSerializer;
 
-impl Serializer {
+impl DeterministicSerializer {
     pub fn serialize(data: &Value) -> Result<Vec<u8>, SerializationError> {
         let canonical_value = Self::canonicalize_value(data.clone())?;
         let canonical_json = serde_json::to_string(&canonical_value)?;

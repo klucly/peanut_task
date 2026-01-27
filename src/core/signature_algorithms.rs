@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use super::utility::{Address, Message, TypedData, Transaction};
 use super::signatures::Signature;
-use super::serializer::Serializer;
+use super::serializer::DeterministicSerializer;
 
 #[derive(Error, Debug)]
 pub enum SignatureAlgorithmError {
@@ -146,11 +146,11 @@ impl SignatureHasher for Eip712Hasher {
     type Data = TypedData;
     
     fn compute_hash(&self, data: &TypedData) -> Result<[u8; 32], SignatureAlgorithmError> {
-        let domain_hash = Serializer::hash(&data.domain)
+        let domain_hash = DeterministicSerializer::hash(&data.domain)
             .map_err(|e| SignatureAlgorithmError::HashError(format!("Failed to hash domain: {}", e)))?;
-        let types_hash = Serializer::hash(&data.types)
+        let types_hash = DeterministicSerializer::hash(&data.types)
             .map_err(|e| SignatureAlgorithmError::HashError(format!("Failed to hash types: {}", e)))?;
-        let value_hash = Serializer::hash(&data.value)
+        let value_hash = DeterministicSerializer::hash(&data.value)
             .map_err(|e| SignatureAlgorithmError::HashError(format!("Failed to hash value: {}", e)))?;
 
         let mut eip712_message = Vec::new();

@@ -25,7 +25,7 @@ Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transactio
 - `Log`
 
 ### serializer
-- `Serializer::serialize` (canonical JSON), `hash`, `verify_determinism`
+- `DeterministicSerializer::serialize` (canonical JSON), `hash`, `verify_determinism`
 
 ### signature_algorithms
 - `Eip191Hasher`, `Eip712Hasher`, `TransactionHasher` (EIP-155)

@@ -1,10 +1,10 @@
-use peanut_task::core::serializer::Serializer;
+use peanut_task::core::serializer::DeterministicSerializer;
 use serde_json::json;
 
 #[test]
 fn test_serialize_simple_object() {
     let data = json!({"name": "Alice", "age": 30});
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Keys should be sorted alphabetically: age, name
@@ -16,8 +16,8 @@ fn test_serialize_order_independence() {
     let data1 = json!({"name": "Alice", "age": 30});
     let data2 = json!({"age": 30, "name": "Alice"});
     
-    let bytes1 = Serializer::serialize(&data1).unwrap();
-    let bytes2 = Serializer::serialize(&data2).unwrap();
+    let bytes1 = DeterministicSerializer::serialize(&data1).unwrap();
+    let bytes2 = DeterministicSerializer::serialize(&data2).unwrap();
     
     assert_eq!(bytes1, bytes2);
 }
@@ -25,7 +25,7 @@ fn test_serialize_order_independence() {
 #[test]
 fn test_serialize_nested_objects() {
     let data = json!({"user": {"name": "Alice", "age": 30}, "id": 1});
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Both outer and inner keys should be sorted
@@ -35,7 +35,7 @@ fn test_serialize_nested_objects() {
 #[test]
 fn test_hash_produces_32_bytes() {
     let data = json!({"name": "Alice", "age": 30});
-    let hash = Serializer::hash(&data).unwrap();
+    let hash = DeterministicSerializer::hash(&data).unwrap();
     assert_eq!(hash.len(), 32);
 }
 
@@ -44,8 +44,8 @@ fn test_hash_deterministic() {
     let data1 = json!({"name": "Alice", "age": 30});
     let data2 = json!({"age": 30, "name": "Alice"});
     
-    let hash1 = Serializer::hash(&data1).unwrap();
-    let hash2 = Serializer::hash(&data2).unwrap();
+    let hash1 = DeterministicSerializer::hash(&data1).unwrap();
+    let hash2 = DeterministicSerializer::hash(&data2).unwrap();
     
     assert_eq!(hash1, hash2);
 }
@@ -55,7 +55,7 @@ fn test_verify_determinism_with_shuffled_keys() {
     // Test that different key orders produce the same canonical output
     let data = json!({"name": "Alice", "age": 30, "city": "NYC", "id": 42});
     // This creates 100 variations with different key orders and verifies they're all the same
-    assert!(Serializer::verify_determinism(&data, Some(100)).is_ok());
+    assert!(DeterministicSerializer::verify_determinism(&data, Some(100)).is_ok());
 }
 
 #[test]
@@ -79,13 +79,13 @@ fn test_verify_determinism_with_nested_objects() {
         }
     });
     // This tests that nested objects at multiple levels all canonicalize correctly
-    assert!(Serializer::verify_determinism(&data, Some(50)).is_ok());
+    assert!(DeterministicSerializer::verify_determinism(&data, Some(50)).is_ok());
 }
 
 #[test]
 fn test_array_serialization() {
     let data = json!([{"b": 2, "a": 1}, {"d": 4, "c": 3}]);
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Array elements should maintain order, but object keys should be sorted
@@ -97,8 +97,8 @@ fn test_hash_different_for_different_data() {
     let data1 = json!({"name": "Alice", "age": 30});
     let data2 = json!({"name": "Bob", "age": 25});
     
-    let hash1 = Serializer::hash(&data1).unwrap();
-    let hash2 = Serializer::hash(&data2).unwrap();
+    let hash1 = DeterministicSerializer::hash(&data1).unwrap();
+    let hash2 = DeterministicSerializer::hash(&data2).unwrap();
     
     assert_ne!(hash1, hash2);
 }
@@ -107,22 +107,22 @@ fn test_hash_different_for_different_data() {
 fn test_serialize_primitives() {
     // Test with string
     let string_data = json!("hello");
-    let string_result = Serializer::serialize(&string_data).unwrap();
+    let string_result = DeterministicSerializer::serialize(&string_data).unwrap();
     assert_eq!(String::from_utf8(string_result).unwrap(), r#""hello""#);
     
     // Test with number
     let number_data = json!(42);
-    let number_result = Serializer::serialize(&number_data).unwrap();
+    let number_result = DeterministicSerializer::serialize(&number_data).unwrap();
     assert_eq!(String::from_utf8(number_result).unwrap(), "42");
     
     // Test with boolean
     let bool_data = json!(true);
-    let bool_result = Serializer::serialize(&bool_data).unwrap();
+    let bool_result = DeterministicSerializer::serialize(&bool_data).unwrap();
     assert_eq!(String::from_utf8(bool_result).unwrap(), "true");
     
     // Test with null
     let null_data = json!(null);
-    let null_result = Serializer::serialize(&null_data).unwrap();
+    let null_result = DeterministicSerializer::serialize(&null_data).unwrap();
     assert_eq!(String::from_utf8(null_result).unwrap(), "null");
 }
 
@@ -139,7 +139,7 @@ fn test_deeply_nested_objects() {
             }
         }
     });
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // All levels should have sorted keys
@@ -155,7 +155,7 @@ fn test_mixed_array_and_objects() {
         ],
         "count": 2
     });
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Objects in arrays should have sorted keys
@@ -174,7 +174,7 @@ fn test_format_no_whitespace() {
             "inner": "value"
         }
     });
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Should not contain any spaces, newlines, or tabs
@@ -194,7 +194,7 @@ fn test_format_numbers_preserved() {
         "zero": 0,
         "large": 1234567890
     });
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // With keys sorted: integer, large, negative, zero
@@ -225,7 +225,7 @@ fn test_format_unicode_handling() {
         "arabic": "مرحبا",
         "mixed": "Hello 世界 🌍"
     });
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Should contain the unicode characters properly encoded
@@ -255,7 +255,7 @@ fn test_format_recursive_key_sorting() {
             {"z_array": 5, "a_array": 6}
         ]
     });
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Check that keys appear in alphabetical order at each level
@@ -286,9 +286,9 @@ fn test_determinism_actually_shuffles() {
     let order2 = json!({"e": 5, "d": 4, "c": 3, "b": 2, "a": 1});
     let order3 = json!({"c": 3, "a": 1, "e": 5, "b": 2, "d": 4});
     
-    let result1 = Serializer::serialize(&order1).unwrap();
-    let result2 = Serializer::serialize(&order2).unwrap();
-    let result3 = Serializer::serialize(&order3).unwrap();
+    let result1 = DeterministicSerializer::serialize(&order1).unwrap();
+    let result2 = DeterministicSerializer::serialize(&order2).unwrap();
+    let result3 = DeterministicSerializer::serialize(&order3).unwrap();
     
     // All different orderings should produce identical output
     assert_eq!(result1, result2);

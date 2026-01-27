@@ -7,7 +7,7 @@
 use peanut_task::core::wallet_manager::WalletManager;
 use peanut_task::core::utility::{Address, Message};
 use peanut_task::core::token_amount::TokenAmount;
-use peanut_task::core::serializer::Serializer;
+use peanut_task::core::serializer::DeterministicSerializer;
 use serde_json::json;
 
 // ============================================================================
@@ -127,7 +127,7 @@ fn test_signing_with_invalid_types_raises_before_crypto() {
 }
 
 // ============================================================================
-// Serializer testing
+// DeterministicSerializer testing
 // ============================================================================
 
 #[test]
@@ -160,8 +160,8 @@ fn test_serializer_nested_objects_mixed_key_orders() {
         }
     });
     
-    let result1 = Serializer::serialize(&data1).unwrap();
-    let result2 = Serializer::serialize(&data2).unwrap();
+    let result1 = DeterministicSerializer::serialize(&data1).unwrap();
+    let result2 = DeterministicSerializer::serialize(&data2).unwrap();
     
     // Should produce identical output regardless of key order
     assert_eq!(result1, result2, "Nested objects with mixed key orders should serialize identically");
@@ -187,7 +187,7 @@ fn test_serializer_unicode_strings() {
         "special_chars": "Café résumé naïve"
     });
     
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Should properly handle all unicode characters
@@ -218,7 +218,7 @@ fn test_serializer_very_large_integers() {
         "safe": safe_int,
     });
     
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Should serialize large integers correctly (as numbers, not strings)
@@ -245,7 +245,7 @@ fn test_serializer_null_values() {
         "array_with_null": [1, null, 3]
     });
     
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Should serialize null values correctly
@@ -275,7 +275,7 @@ fn test_serializer_empty_objects_arrays() {
         }
     });
     
-    let result = Serializer::serialize(&data).unwrap();
+    let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
     
     // Should serialize empty structures correctly
@@ -295,7 +295,7 @@ fn test_serializer_floating_point_handling() {
         "integer": 42
     });
     
-    let result = Serializer::serialize(&data_with_float);
+    let result = DeterministicSerializer::serialize(&data_with_float);
     
     // Should fail with explicit error about floating point
     assert!(result.is_err(), "Floating point numbers should be rejected");
@@ -314,7 +314,7 @@ fn test_serializer_floating_point_handling() {
         "large": 18446744073709551615u64
     });
     
-    let result_int = Serializer::serialize(&data_with_integers);
+    let result_int = DeterministicSerializer::serialize(&data_with_integers);
     assert!(result_int.is_ok(), "Integer numbers should be allowed");
     
     // Test that zero as float is rejected
@@ -322,7 +322,7 @@ fn test_serializer_floating_point_handling() {
         "zero_float": 0.0
     });
     
-    let result_zero = Serializer::serialize(&data_zero_float);
+    let result_zero = DeterministicSerializer::serialize(&data_zero_float);
     assert!(result_zero.is_err(), "Zero as float should be rejected");
 }
 
