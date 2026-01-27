@@ -56,16 +56,23 @@ just run
 
 ## Example Output
 
-Current implementation (as of initial version):
+Sample output from `just run`:
 
 ```
-Secret info: `123`
-Works
+Balance: 800.86843519544927043
+Nonce - pending: 35887, latest: 35887, earliest: 0
+Gas - base: 0 gwei, max fees - low: 0 gwei, medium: 0 gwei, high: 1 gwei
+TransactionBuilder: built tx to 0x742D35CC6634c0532925A3b844BC9E7595F0BEb0, value 0.001, gas_limit Some(25200)
+Gas estimate: 21000 units
+Call result: 0 bytes
+Transaction: 0x388C818CA8B9251b393131C08a736A67ccB19297 -> 0.008653912357036746
+Receipt: block 24320264, status: success
+Send transaction (expected error): All RPC endpoints failed: RPC request failed: eth_sendRawTransaction failed: server returned an error response: error code -32602: Invalid parameters: transaction could not be decoded: unsupported transaction type
 ```
 
 ## Limitations & Assumptions
 - **Rust version**: Tested with stable 1.84+. May work on older editions but not guaranteed.
-- **Error handling**: Minimal – assumes happy path for baseline.
+- **Error handling**: RPC failures trigger fallback across configured endpoints; some flows (e.g. send) deliberately exercise expected-error paths (e.g. unsupported transaction type). Not all error paths are fully surfaced to the user.
 - **Platform**: Developed on Linux (Arch). Should work on macOS/Windows but shell commands in `justfile` or file paths / env vars may need minor tweaks.
 - **dotenv**: Loads `.env` at runtime if present.
 
