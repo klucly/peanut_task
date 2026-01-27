@@ -51,6 +51,27 @@ fn main() {
         max_fee_high / 1_000_000_000);
     
     let to_address = core::base_types::Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap();
+
+    let wallet = core::wallet_manager::WalletManager::from_hex_string(
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+    )
+    .unwrap();
+    let built_tx = chain::TransactionBuilder::new(&chain_client, &wallet)
+        .to(to_address.clone())
+        .value(core::base_types::TokenAmount::from_human("0.001", 18, None).unwrap())
+        .with_gas_estimate(1.2)
+        .unwrap()
+        .with_gas_price(chain::gas_price::Priority::Medium)
+        .unwrap()
+        .build()
+        .unwrap();
+    println!(
+        "TransactionBuilder: built tx to {}, value {}, gas_limit {:?}",
+        built_tx.to,
+        built_tx.value.human(),
+        built_tx.gas_limit
+    );
+
     let mut tx = core::base_types::Transaction {
         to: to_address.clone(),
         value: core::base_types::TokenAmount::new(1_000_000_000_000_000u128, 18, Some("ETH".to_string())),

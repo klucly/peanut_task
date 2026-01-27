@@ -31,6 +31,31 @@ impl ChainClient {
         })
     }
 
+    pub fn get_chain_id(&self) -> Result<u64, ChainClientError> {
+        let mut last_error = None;
+        for rpc_url in &self.rpc_urls {
+            match self.try_get_chain_id_from_url(rpc_url) {
+                Ok(chain_id) => return Ok(chain_id),
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
+        Err(ChainClientError::all_endpoints_failed(last_error))
+    }
+
+    fn try_get_chain_id_from_url(&self, rpc_url: &RpcUrl) -> Result<u64, ChainClientError> {
+        self.runtime.block_on(async {
+            let parsed_url = rpc_url.as_url().clone();
+            let provider = ProviderBuilder::new().connect_http(parsed_url);
+            let chain_id = provider.get_chain_id().await.map_err(|e| {
+                ChainClientError::RpcError(format!("get_chain_id failed: {}", e))
+            })?;
+            Ok(chain_id)
+        })
+    }
+
     pub fn get_balance(&self, address: Address) -> Result<TokenAmount, ChainClientError> {
         let alloy_address = address.alloy_address();
         let mut last_error = None;

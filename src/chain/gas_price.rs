@@ -1,9 +1,22 @@
-/// Priority level for gas fees.
+/// Priority level for gas fees. Parse from `"low"` | `"medium"` | `"high"` via `FromStr`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Priority {
     Low,
     Medium,
     High,
+}
+
+impl std::str::FromStr for Priority {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "low" => Ok(Priority::Low),
+            "medium" => Ok(Priority::Medium),
+            "high" => Ok(Priority::High),
+            _ => Err(format!("Invalid gas priority '{}', use low|medium|high", s)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

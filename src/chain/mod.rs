@@ -3,9 +3,11 @@ pub mod errors;
 pub mod gas_price;
 pub mod parsers;
 pub mod receipt_polling;
+pub mod transaction_builder;
 pub mod url_wrapper;
 
 pub use chain_client::ChainClient;
 pub use errors::{ChainClientError, ChainClientCreationError};
-pub use gas_price::GasPrice;
+pub use gas_price::{GasPrice, Priority};
+pub use transaction_builder::{TransactionBuilder, TransactionBuilderError};
 pub use url_wrapper::{RpcUrl, RpcUrlError, RpcUrlValidationError};

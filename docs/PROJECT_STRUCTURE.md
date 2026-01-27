@@ -51,7 +51,7 @@ Re-exports from utility, signatures, token_amount, transaction_receipt.
 
 ### gas_price
 - `GasPrice::new`, `get_max_fee`
-- `Priority` (Low/Medium/High)
+- `Priority` enum (Low/Medium/High); `FromStr` for `"low"` | `"medium"` | `"high"`
 
 ### parsers
 - `parse_tx_hash` (validates 0x-prefixed 64-char hex)
@@ -63,13 +63,21 @@ Re-exports from utility, signatures, token_amount, transaction_receipt.
 
 ### chain_client
 - `ChainClient::new` (requires non-empty `rpc_urls`, creates Tokio runtime; tries URLs in order on failure)
-- `get_balance`, `get_nonce` (accepts `"latest"`, `"pending"`, `"earliest"`, or block number), `get_gas_price`, `estimate_gas`
+- `get_chain_id`, `get_balance`, `get_nonce` (accepts `"latest"`, `"pending"`, `"earliest"`, or block number), `get_gas_price`, `estimate_gas`
 - `send_transaction` (`eth_sendRawTransaction`), `wait_for_receipt` (polls until found or timeout)
 - `get_transaction` (returns `TransactionNotFound` if not found), `get_receipt`, `call` (`eth_call`)
 
+### transaction_builder
+- `TransactionBuilder::new(client, wallet)` — fluent builder for transactions
+- Fluent setters: `to`, `value`, `data`, `nonce`, `gas_limit`
+- `with_gas_estimate(buffer)` — estimate gas and set limit with buffer (e.g. 1.2 = 20% headroom)
+- `with_gas_price(priority)` — set gas from network; `priority`: `Priority` enum (or `s.parse::<Priority>()` for strings)
+- Terminal: `build()` → `Transaction`; `build_and_sign()` → `SignedTransaction`; `send()` → tx hash; `send_and_wait(timeout)` → `TransactionReceipt`
+- `TransactionBuilderError`: `MissingField`, `Chain`, `Wallet`
+
 ## Dependencies
 
-`core`: utility, token_amount, serializer (base) → signatures, signature_algorithms, transaction_receipt, wallet_manager. `base_types` re-exports only. `chain`: url_wrapper; chain_client uses `core::base_types` and `RpcUrl`.
+`core`: utility, token_amount, serializer (base) → signatures, signature_algorithms, transaction_receipt, wallet_manager. `base_types` re-exports only. `chain`: url_wrapper; chain_client uses `core::base_types` and `RpcUrl`; transaction_builder uses chain_client, gas_price, and `core::wallet_manager`.
 
 ## Build
 
