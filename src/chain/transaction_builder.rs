@@ -141,8 +141,7 @@ impl<'a> TransactionBuilder<'a> {
             .sign_transaction(tx)
             .map_err(|e| TransactionBuilderError::Wallet(e.to_string()))
     }
-
-    /// Build, sign, send; returns transaction hash.
+`
     pub fn send(&self) -> Result<String, TransactionBuilderError> {
         let signed = self.build_and_sign()?;
         self.client
@@ -150,7 +149,6 @@ impl<'a> TransactionBuilder<'a> {
             .map_err(TransactionBuilderError::from)
     }
 
-    /// Build, sign, send, then wait for receipt. `timeout` in seconds.
     pub fn send_and_wait(
         &self,
         timeout: u64,
