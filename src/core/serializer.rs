@@ -37,7 +37,7 @@ impl Serializer {
     }
 
     pub fn verify_determinism(data: &Value, iterations: Option<usize>) -> Result<(), SerializationError> {
-        let n = iterations.unwrap_or(100);
+        let n = iterations.unwrap_or(1000);
         let reference = Self::serialize(data)?;
 
         for _ in 0..n {

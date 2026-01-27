@@ -141,7 +141,7 @@ impl<'a> TransactionBuilder<'a> {
             .sign_transaction(tx)
             .map_err(|e| TransactionBuilderError::Wallet(e.to_string()))
     }
-`
+
     pub fn send(&self) -> Result<String, TransactionBuilderError> {
         let signed = self.build_and_sign()?;
         self.client
