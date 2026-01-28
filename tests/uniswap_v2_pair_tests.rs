@@ -22,8 +22,35 @@ fn token1() -> Token {
     )
 }
 
+/// USDC-like token (6 decimals) for ETH/USDC pair tests.
+fn usdc_token() -> Token {
+    Token::new(
+        Address::from_string("0x0000000000000000000000000000000000000002").unwrap(),
+        6,
+        None,
+    )
+}
+
 fn make_pair(reserve0: u128, reserve1: u128, fee_bps: u16) -> UniswapV2Pair {
     UniswapV2Pair::new(pair_address(), token0(), token1(), reserve0, reserve1, fee_bps)
+}
+
+#[test]
+fn test_get_amount_out_basic() {
+    // 1000 ETH / 2M USDC pool, buy 1 ETH worth (2000 USDC in).
+    let pair = UniswapV2Pair::new(
+        pair_address(),
+        token0(),  // ETH, 18 decimals
+        usdc_token(), // USDC, 6 decimals
+        1000 * 10u128.pow(18),
+        2_000_000 * 10u128.pow(6),
+        30,
+    );
+    let usdc_in = 2000 * 10u128.pow(6);
+    let eth_out = pair.get_amount_out(usdc_in, &usdc_token()).unwrap();
+    // Slightly less than 1 ETH due to fee + impact.
+    assert!(eth_out < 10u128.pow(18), "expected less than 1 ETH, got {}", eth_out);
+    assert!(eth_out > 99 * 10u128.pow(16), "expected more than 0.99 ETH, got {}", eth_out);
 }
 
 #[test]
@@ -35,6 +62,17 @@ fn test_get_amount_out_matches_solidity_formula() {
     let pair = make_pair(1000, 2000, 30);
     let out = pair.get_amount_out(100, &token0()).unwrap();
     assert_eq!(out, 181);
+}
+
+#[test]
+fn test_integer_math_no_floats() {
+    // Large numbers that would lose precision with float; core path uses u128 only (no overflow).
+    let reserve = 10u128.pow(18);
+    let amount_in = 10u128.pow(15);
+    let pair = make_pair(reserve, reserve, 30);
+    let out = pair.get_amount_out(amount_in, &token0()).unwrap();
+    assert!(out > 0);
+    assert!(out < reserve);
 }
 
 #[test]
@@ -116,6 +154,18 @@ fn test_simulate_swap_updates_reserves() {
     let expected_out = pair.get_amount_out(amount_in, &token0()).unwrap();
     assert_eq!(after.reserve0, 1000 + 100);
     assert_eq!(after.reserve1, 2000 - expected_out);
+}
+
+#[test]
+fn test_swap_is_immutable() {
+    let pair = make_pair(1000, 2000, 30);
+    let original_reserve0 = pair.reserve0;
+    let original_reserve1 = pair.reserve1;
+    let new_pair = pair.simulate_swap(100, &token0()).unwrap();
+    assert_eq!(pair.reserve0, original_reserve0);
+    assert_eq!(pair.reserve1, original_reserve1);
+    assert_ne!(new_pair.reserve0, original_reserve0);
+    assert_ne!(new_pair.reserve1, original_reserve1);
 }
 
 #[test]
