@@ -103,6 +103,7 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 - `get_chain_id`, `get_balance`, `get_nonce` (accepts `"latest"`, `"pending"`, `"earliest"`, or block number), `get_gas_price`, `estimate_gas`
 - `send_transaction` (`eth_sendRawTransaction`), `wait_for_receipt` (polls until found or timeout)
 - `get_transaction` (returns `TransactionNotFound` if not found), `get_receipt`, `call` (`eth_call`)
+- Tests in `tests/chain_client_tests.rs`: multi-URL fallback (first URL unreachable, second stub succeeds), `AllEndpointsFailed` for send_transaction/get_chain_id/get_balance, error classification (`AllEndpointsFailed` for HTTP 500, `InvalidResponse` via invalid block in get_nonce, `TransactionNotFound` via stub null tx, `TimeoutError` via wait_for_receipt with stub that never returns receipt). Uses `httpmock` (dev-dependency) for local JSON-RPC stubs; no second RPC/API key required.
 
 ### transaction_builder
 - `TransactionBuilder::new(client, wallet)` — fluent builder for transactions
