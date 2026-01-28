@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 alloy = { version = "1", features = ["provider-http"] }
+rust_decimal = "1"
 url = "2.5"
 dotenvy = "0.15.7"
 getrandom = "0.3.4"

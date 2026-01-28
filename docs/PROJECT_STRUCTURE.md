@@ -20,6 +20,9 @@ Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transactio
 ### token_amount
 - `TokenAmount::new`, `from_human`, `human` (no floats), `try_add`, `try_mul`
 
+### token_info
+- `TokenInfo::new` — token identity (address, decimals, optional symbol)
+
 ### transaction_receipt
 - `TransactionReceipt::from_web3` (parses hex or numeric), `tx_fee`
 - `Log`
@@ -37,7 +40,23 @@ Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transactio
 - `sign_message` (EIP-191), `sign_typed_data` (EIP-712), `sign_transaction`
 
 ### base_types
-Re-exports from utility, signatures, token_amount, transaction_receipt.
+Re-exports from utility, signatures, token_amount, token_info, transaction_receipt.
+
+## Pricing
+
+### uniswap_v2_pair
+- `Decimal` (rust_decimal) — re-exported for prices and impact; use `*`, `/`, `round_dp()`, `to_string()` etc. for calculations and display
+- `TokenInfo` (re-exported as `pricing::Token`) — address + decimals (+ optional symbol) for pair tokens
+- `UniswapV2Pair::new(address, token0, token1, reserve0, reserve1, fee_bps)` — all math integer-only; token inputs are `TokenInfo`
+- `get_amount_out(amount_in, token_in)` — output for given input; matches Solidity formula (10000 - fee_bps, numerator/denominator)
+- `get_amount_in(amount_out, token_out)` — required input for desired output (inverse, rounds up)
+- `get_spot_price(token_in)` → `Decimal` — spot price; prefer for display; result usable in calculations (use `get_execution_price` for execution precision)
+- `get_execution_price(amount_in, token_in)` → `Decimal` — execution price; use for precise calculations
+- `get_price_impact(amount_in, token_in)` → `Decimal` — impact as (spot - execution) / spot; use `Decimal` arithmetic for calculations
+- `simulate_swap(amount_in, token_in)` — new pair with updated reserves (for multi-hop)
+- `from_chain(address, client)` — fetch reserves and token0/token1 via `eth_call` (getReserves, token0, token1)
+- `UniswapV2PairError`: `TokenNotInPair`, `Chain`, `InvalidResponse`, `Overflow`
+- Tests for `from_chain` in `tests/uniswap_v2_pair_tests.rs` run only when `INFURA_API_KEY` is set and not the placeholder `apikey`; otherwise they skip (pass without network call).
 
 ## Chain
 
@@ -77,7 +96,7 @@ Re-exports from utility, signatures, token_amount, transaction_receipt.
 
 ## Dependencies
 
-`core`: utility, token_amount, serializer (base) → signatures, signature_algorithms, transaction_receipt, wallet_manager. `base_types` re-exports only. `chain`: url_wrapper; chain_client uses `core::base_types` and `RpcUrl`; transaction_builder uses chain_client, gas_price, and `core::wallet_manager`.
+`core`: utility, token_amount, token_info, serializer (base) → signatures, signature_algorithms, transaction_receipt, wallet_manager. `base_types` re-exports only. `chain`: url_wrapper; chain_client uses `core::base_types` and `RpcUrl`; transaction_builder uses chain_client, gas_price, and `core::wallet_manager`. `pricing`: uses `core::base_types` (Address, TokenInfo, TokenAmount, Transaction), `chain::ChainClient`, and `rust_decimal`; uniswap_v2_pair implements Uniswap V2 AMM math and `from_chain` via `eth_call`; spot/execution/impact return `Decimal` (rust_decimal) for calculations and display; prefer `get_execution_price` for precision, `get_spot_price` for display.
 
 ## Build
 

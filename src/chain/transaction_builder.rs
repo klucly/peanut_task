@@ -3,7 +3,6 @@ use crate::core::base_types::{
 };
 use crate::core::wallet_manager::WalletManager;
 use crate::chain::errors::ChainClientError;
-use crate::chain::gas_price::Priority;
 use super::chain_client::ChainClient;
 use thiserror::Error;
 
