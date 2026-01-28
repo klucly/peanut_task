@@ -72,9 +72,21 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 - `get_execution_price(amount_in: &TokenAmount)` → `Decimal` — execution price; use for precise calculations
 - `get_price_impact(amount_in: &TokenAmount)` → `Decimal` — impact as (spot - execution) / spot
 - `simulate_swap(amount_in: &TokenAmount)` → `Self` — side from `amount_in.token`; new pair with updated reserves (for multi-hop)
+- `reserve_for_token(token: &Token)` → `u128` — reserve of the given token (for sizing / upper bounds)
 - `from_chain(address, client)` — fetch reserves and token0/token1 via `eth_call`; builds `TokenInPair::new(Token::new(18, None), addr)`
 - `UniswapV2PairError`: `TokenNotInPair`, `Chain`, `InvalidResponse`, `Overflow`
 - Tests for `from_chain` in `tests/uniswap_v2_pair_tests.rs` run only when `INFURA_API_KEY` is set and not the placeholder `apikey`; otherwise they skip (pass without network call).
+
+### price_impact_analyzer
+- **PriceImpactAnalyzer** — analyzes price impact across different trade sizes; holds a `UniswapV2Pair`
+- `new(pair: UniswapV2Pair)` — construct from a pair
+- `generate_impact_table(token_in: &Token, sizes: &[u128])` → `Vec<ImpactRow>` — one row per size: `amount_in`, `amount_out`, `spot_price`, `execution_price`, `price_impact_pct`
+- `find_max_size_for_impact(token_in: &Token, max_impact_pct: Decimal)` → `u128` — binary search for largest trade with impact ≤ max_impact_pct
+- `estimate_true_cost(amount_in: &TokenAmount, gas_price_gwei: u64, gas_estimate: u64)` → `TrueCostResult`: gross_output, gas_cost_eth, gas_cost_in_output_token, net_output, effective_price; when output is not ETH, gas_cost_in_output_token = 0 and net_output = gross_output; gas_estimate default per spec 150_000; uses private helpers `gas_cost_wei` and `effective_price`
+- **ImpactRow** — single row: amount_in, amount_out, spot_price, execution_price, price_impact_pct
+- **TrueCostResult** — gross_output, gas_cost_eth, gas_cost_in_output_token, net_output, effective_price
+- **PriceImpactAnalyzerError**: `Pair(UniswapV2PairError)`, `Overflow`
+- Tests in `tests/price_impact_analyzer_tests.rs`: empty sizes, table matches pair methods, token not in pair, zero reserve, max size respects impact, zero amount_in, net output deduction
 
 ## Chain
 

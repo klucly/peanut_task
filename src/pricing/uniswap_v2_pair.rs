@@ -127,17 +127,15 @@ impl UniswapV2Pair {
     }
 
     pub fn get_price_impact(&self, amount_in: &TokenAmount) -> Result<Decimal, UniswapV2PairError> {
-        let (reserve_in, reserve_out) = self.reserves_for_token(&amount_in.token)?;
-        let amount_out = self.get_amount_out(amount_in)?;
-        if reserve_in == 0 || amount_in.raw == 0 {
+        if amount_in.raw == 0 {
             return Ok(Decimal::ZERO);
         }
-        let spot_val = u128_to_decimal(reserve_out * amount_in.raw)?;
-        let exec_val = u128_to_decimal(amount_out.raw * reserve_in)?;
-        if spot_val <= exec_val {
+        let spot_price = self.get_spot_price(&amount_in.token)?;
+        let exec_price = self.get_execution_price(amount_in)?;
+        if spot_price.is_zero() || exec_price >= spot_price {
             return Ok(Decimal::ZERO);
         }
-        Ok((spot_val - exec_val) / spot_val)
+        Ok((spot_price - exec_price) / spot_price)
     }
 
     pub fn simulate_swap(&self, amount_in: &TokenAmount) -> Result<Self, UniswapV2PairError> {
@@ -197,6 +195,11 @@ impl UniswapV2Pair {
             reserve1,
             30,
         ))
+    }
+
+    pub fn reserve_for_token(&self, token: &Token) -> Result<u128, UniswapV2PairError> {
+        let (r, _) = self.reserves_for_token(token)?;
+        Ok(r)
     }
 
     fn reserves_for_token(&self, token: &Token) -> Result<(u128, u128), UniswapV2PairError> {
