@@ -19,24 +19,20 @@ fn test_valid_address_passes_validation() {
         chain_id: 1,
     };
 
-    // Should not panic or return an error
     let result = wallet.sign_transaction(tx);
     assert!(result.is_ok(), "Valid address should pass validation");
 }
 
 #[test]
 fn test_none_address_passes_validation() {
-    // Note: According to the spec, `to` is required (not optional).
-    // Contract creation transactions would need a different approach.
-    // This test is kept but uses a zero address to represent contract creation.
     let wallet = WalletManager::from_hex_string(
         "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     ).unwrap();
 
     let tx = Transaction {
-        to: Address::from_string("0x0000000000000000000000000000000000000000").unwrap(), // Zero address for contract creation
+        to: Address::from_string("0x0000000000000000000000000000000000000000").unwrap(),
         value: TokenAmount::native_eth(0),
-        data: vec![0x60, 0x60, 0x60], // Some init code
+        data: vec![0x60, 0x60, 0x60],
         nonce: Some(0),
         gas_limit: Some(21000),
         max_fee_per_gas: Some(20000000000),
@@ -44,7 +40,6 @@ fn test_none_address_passes_validation() {
         chain_id: 1,
     };
 
-    // Should not panic or return an error
     let result = wallet.sign_transaction(tx);
     assert!(result.is_ok(), "Zero address (contract creation) should pass validation");
 }
@@ -57,9 +52,8 @@ fn test_address_missing_0x_prefix_fails() {
 
     let tx = Transaction {
         to: Address::from_string("742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap_or_else(|_| {
-            // This will fail validation, but we want to test the error case
             Address { value: "742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string() }
-        }), // Missing 0x
+        }),
         value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
@@ -199,7 +193,6 @@ fn test_address_with_uppercase_and_lowercase_hex_passes() {
         "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     ).unwrap();
 
-    // Test with mixed case (valid hex)
     let tx = Transaction {
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap(), // Mixed case is valid
         value: TokenAmount::native_eth(1000000000000000000),
@@ -305,7 +298,6 @@ fn test_address_with_only_0x_prefix_fails() {
 
 #[test]
 fn test_well_known_address_passes() {
-    // Test with a well-known Ethereum address
     let wallet = WalletManager::from_hex_string(
         "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     ).unwrap();

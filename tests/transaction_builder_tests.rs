@@ -42,7 +42,6 @@ fn test_with_gas_price_accepts_priority_enum() {
     for priority in [Priority::Low, Priority::Medium, Priority::High] {
         let builder = TransactionBuilder::new(&client, &wallet);
         let res = builder.with_gas_price(priority);
-        // client.get_gas_price() fails (no real RPC)
         assert!(res.is_err(), "priority {:?} should fail on RPC", priority);
         let e = match res {
             Ok(_) => panic!("priority {:?} should fail", priority),
@@ -67,7 +66,6 @@ fn test_fluent_chaining_to_value_data() {
         .to(to)
         .value(value)
         .data(vec![0u8; 4]);
-    // build() calls get_chain_id() and fails with AllEndpointsFailed
     let err = builder.build().unwrap_err();
     assert!(matches!(err, TransactionBuilderError::Chain(_)));
 }
@@ -85,7 +83,6 @@ fn test_build_and_sign_fails_without_gas_price_or_rpc() {
         Ok(_) => panic!("build_and_sign should fail when gas fees missing or RPC unreachable"),
         Err(e) => e,
     };
-    // Either Chain (get_chain_id) or MissingField (gas fees)
     assert!(
         matches!(
             err,

@@ -6,8 +6,6 @@ fn test_serialize_simple_object() {
     let data = json!({"name": "Alice", "age": 30});
     let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
-    
-    // Keys should be sorted alphabetically: age, name
     assert_eq!(result_str, r#"{"age":30,"name":"Alice"}"#);
 }
 
@@ -27,8 +25,6 @@ fn test_serialize_nested_objects() {
     let data = json!({"user": {"name": "Alice", "age": 30}, "id": 1});
     let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
-    
-    // Both outer and inner keys should be sorted
     assert_eq!(result_str, r#"{"id":1,"user":{"age":30,"name":"Alice"}}"#);
 }
 
@@ -52,15 +48,12 @@ fn test_hash_deterministic() {
 
 #[test]
 fn test_verify_determinism_with_shuffled_keys() {
-    // Test that different key orders produce the same canonical output
     let data = json!({"name": "Alice", "age": 30, "city": "NYC", "id": 42});
-    // This creates 100 variations with different key orders and verifies they're all the same
     assert!(DeterministicSerializer::verify_determinism(&data, Some(100)).is_ok());
 }
 
 #[test]
 fn test_verify_determinism_with_nested_objects() {
-    // Test determinism with nested objects that can have keys shuffled
     let data = json!({
         "user": {
             "name": "Alice",
@@ -78,7 +71,6 @@ fn test_verify_determinism_with_nested_objects() {
             "source": "api"
         }
     });
-    // This tests that nested objects at multiple levels all canonicalize correctly
     assert!(DeterministicSerializer::verify_determinism(&data, Some(50)).is_ok());
 }
 
@@ -87,8 +79,6 @@ fn test_array_serialization() {
     let data = json!([{"b": 2, "a": 1}, {"d": 4, "c": 3}]);
     let result = DeterministicSerializer::serialize(&data).unwrap();
     let result_str = String::from_utf8(result).unwrap();
-    
-    // Array elements should maintain order, but object keys should be sorted
     assert_eq!(result_str, r#"[{"a":1,"b":2},{"c":3,"d":4}]"#);
 }
 
@@ -105,17 +95,14 @@ fn test_hash_different_for_different_data() {
 
 #[test]
 fn test_serialize_primitives() {
-    // Test with string
     let string_data = json!("hello");
     let string_result = DeterministicSerializer::serialize(&string_data).unwrap();
     assert_eq!(String::from_utf8(string_result).unwrap(), r#""hello""#);
-    
-    // Test with number
+
     let number_data = json!(42);
     let number_result = DeterministicSerializer::serialize(&number_data).unwrap();
     assert_eq!(String::from_utf8(number_result).unwrap(), "42");
-    
-    // Test with boolean
+
     let bool_data = json!(true);
     let bool_result = DeterministicSerializer::serialize(&bool_data).unwrap();
     assert_eq!(String::from_utf8(bool_result).unwrap(), "true");

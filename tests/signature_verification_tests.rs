@@ -9,29 +9,23 @@ mod tests {
 
     #[test]
     fn test_valid_signature_is_accepted() {
-        // Create a wallet and sign a message
         let wallet = WalletManager::from_hex_string(
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         ).unwrap();
         
         let message = Message("Hello, Ethereum!".to_string());
         let signed = wallet.sign_message(message).unwrap();
-        
-        // Verify that the signature is valid
         assert!(signed.verify().is_ok(), "Valid signature should be accepted");
     }
 
     #[test]
     fn test_invalid_recovery_id_is_rejected() {
-        // Create a wallet and sign a message
         let wallet = WalletManager::from_hex_string(
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         ).unwrap();
         
         let message = Message("Hello, Ethereum!".to_string());
         let signed = wallet.sign_message(message).unwrap();
-        
-        // Try to create a SignedMessage with an invalid v value
         let invalid_sig = Signature::new(signed.signature.r, signed.signature.s, 26);
         let result = SignedMessage::new(
             signed.signature_data.clone(),
@@ -45,10 +39,7 @@ mod tests {
 
     #[test]
     fn test_all_zero_signature_is_rejected() {
-        // Create a message and an invalid all-zero signature
         let message = Message("Hello, Ethereum!".to_string());
-        
-        // Use a dummy address for testing
         let dummy_address = peanut_task::core::utility::Address::from_string(
             "0x0000000000000000000000000000000000000000"
         ).unwrap();
@@ -60,22 +51,17 @@ mod tests {
             zero_sig,
             &dummy_address
         );
-        
-        // All-zero signature should be rejected as it's not a valid ECDSA signature
         assert!(result.is_err(), "All-zero signature should be rejected");
     }
 
     #[test]
     fn test_signature_with_recovery_id_variations() {
-        // Create a wallet and sign a message
         let wallet = WalletManager::from_hex_string(
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         ).unwrap();
         
         let message = Message("Hello, Ethereum!".to_string());
         let signed = wallet.sign_message(message).unwrap();
-        
-        // The signature should have v = 27 or v = 28
         assert!(
             signed.signature.v == 27 || signed.signature.v == 28,
             "Valid signature should have v = 27 or 28, got v = {}",
@@ -85,7 +71,6 @@ mod tests {
 
     #[test]
     fn test_multiple_signatures_all_valid() {
-        // Create a wallet and sign multiple messages
         let wallet = WalletManager::from_hex_string(
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         ).unwrap();
@@ -111,7 +96,6 @@ mod tests {
 
     #[test]
     fn test_signature_components_cannot_be_swapped() {
-        // Create a wallet and sign a message
         let wallet = WalletManager::from_hex_string(
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         ).unwrap();
@@ -119,7 +103,6 @@ mod tests {
         let message = Message("Hello, Ethereum!".to_string());
         let signed = wallet.sign_message(message).unwrap();
         
-        // Try to swap r and s components
         let swapped_sig = Signature::new(signed.signature.s, signed.signature.r, signed.signature.v);
         let result = SignedMessage::new(
             signed.signature_data.clone(),
@@ -132,7 +115,6 @@ mod tests {
 
     #[test]
     fn test_wrong_signer_is_rejected() {
-        // Create two different wallets
         let wallet1 = WalletManager::from_hex_string(
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         ).unwrap();
@@ -140,11 +122,9 @@ mod tests {
             "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
         ).unwrap();
         
-        // Sign a message with wallet1
         let message = Message("Hello, Ethereum!".to_string());
         let signed = wallet1.sign_message(message).unwrap();
         
-        // Try to create a SignedMessage claiming it was signed by wallet2
         let result = SignedMessage::new(
             signed.signature_data.clone(),
             signed.signature.clone(),
@@ -156,22 +136,15 @@ mod tests {
 
     #[test]
     fn test_signed_message_guarantees_validity() {
-        // Create a wallet and sign a message
         let wallet = WalletManager::from_hex_string(
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         ).unwrap();
         
         let message = Message("Hello, Ethereum!".to_string());
         let signed = wallet.sign_message(message).unwrap();
-        
-        // Verification should always succeed for a properly created SignedMessage
         assert!(signed.verify().is_ok(), "SignedMessage should always be verifiable");
-        
-        // Test that we can manually create a SignedMessage with valid signature
         let message2 = Message("Another test".to_string());
         let signed2 = wallet.sign_message(message2).unwrap();
-        
-        // Manually recreate it with the correct signer
         let manual = SignedMessage::new(
             signed2.signature_data.clone(),
             signed2.signature.clone(),

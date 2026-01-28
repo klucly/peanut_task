@@ -20,8 +20,14 @@ pub struct WalletManager {
 impl fmt::Debug for WalletManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WalletManager")
-            .field("private_key", &self.private_key)
+            .field("address", &self.address())
             .finish()
+    }
+}
+
+impl fmt::Display for WalletManager {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "WalletManager({})", self.address())
     }
 }
 

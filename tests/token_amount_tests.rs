@@ -7,8 +7,6 @@ mod tests {
         Token::new(decimals, symbol.map(String::from))
     }
 
-    // ========== Tests for `new()` ==========
-
     #[test]
     fn test_new_basic() {
         let amount = TokenAmount::native_eth(1000000000000000000);
@@ -38,8 +36,6 @@ mod tests {
         assert_eq!(amount.raw, u128::MAX);
         assert_eq!(amount.decimals(), 18);
     }
-
-    // ========== Tests for `from_human()` - Valid inputs ==========
 
     #[test]
     fn test_from_human_whole_number() {
@@ -93,14 +89,12 @@ mod tests {
 
     #[test]
     fn test_from_human_precise_decimal() {
-        // Test with full precision for 18 decimals
         let amount = TokenAmount::from_human("1.234567890123456789", token(18, None)).unwrap();
         assert_eq!(amount.raw, 1234567890123456789);
     }
 
     #[test]
     fn test_from_human_precise_decimal_6() {
-        // Test with full precision for 6 decimals
         let amount = TokenAmount::from_human("1.123456", token(6, None)).unwrap();
         assert_eq!(amount.raw, 1123456);
     }
@@ -125,12 +119,9 @@ mod tests {
 
     #[test]
     fn test_from_human_short_fractional() {
-        // Fractional part shorter than decimals should be padded
         let amount = TokenAmount::from_human("1.5", token(18, None)).unwrap();
         assert_eq!(amount.raw, 1500000000000000000);
     }
-
-    // ========== Tests for `from_human()` - Error cases ==========
 
     #[test]
     fn test_from_human_invalid_format_multiple_dots() {
@@ -142,7 +133,6 @@ mod tests {
     #[test]
     fn test_from_human_fractional_exceeds_decimals() {
         let result = TokenAmount::from_human("1.1234567890123456789", token(18, None));
-        // This should fail because fractional part has 19 digits but decimals is 18
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Fractional part has"));
     }
@@ -183,22 +173,14 @@ mod tests {
     #[test]
     fn test_from_human_only_dot_start() {
         let result = TokenAmount::from_human(".5", token(18, None));
-        // This should fail because integer part is empty
         assert!(result.is_err());
     }
 
     #[test]
     fn test_from_human_overflow() {
-        // Try to create an amount that would overflow u128
         let _result = TokenAmount::from_human("340282366920938463463374607431768211456", token(0, None));
-        // This might succeed or fail depending on the exact value, but let's test a known overflow case
-        // Actually, let's test with a more reasonable but still large number
         let _result2 = TokenAmount::from_human("999999999999999999999999999999999999999", token(18, None));
-        // This should either succeed or fail gracefully
-        // The exact behavior depends on whether it overflows during multiplication
     }
-
-    // ========== Tests for `human()` ==========
 
     #[test]
     fn test_human_whole_number() {
@@ -233,7 +215,6 @@ mod tests {
     #[test]
     fn test_human_usdc_whole() {
         let amount = TokenAmount::new(100000000, token(6, None));
-        // When fractional part is zero, we return just the integer part
         assert_eq!(amount.human(), "100");
     }
 
@@ -247,7 +228,6 @@ mod tests {
     fn test_human_trailing_zeros_removed() {
         let amount = TokenAmount::new(1500000000000000000, token(18, None));
         assert_eq!(amount.human(), "1.5");
-        // Should not have trailing zeros
         assert!(!amount.human().ends_with("0"));
     }
 
@@ -277,14 +257,12 @@ mod tests {
 
     #[test]
     fn test_human_8_decimals() {
-        // Test with 8 decimals (like some tokens)
         let amount = TokenAmount::new(12345678, token(8, None));
         assert_eq!(amount.human(), "0.12345678");
     }
 
     #[test]
     fn test_human_0_decimals() {
-        // Test with 0 decimals (like some tokens)
         let amount = TokenAmount::new(100, token(0, None));
         assert_eq!(amount.human(), "100");
     }
@@ -294,8 +272,6 @@ mod tests {
         let amount = TokenAmount::new(15, token(1, None));
         assert_eq!(amount.human(), "1.5");
     }
-
-    // ========== Round-trip tests (from_human -> human) ==========
 
     #[test]
     fn test_round_trip_whole_number() {
@@ -348,27 +324,20 @@ mod tests {
 
     #[test]
     fn test_round_trip_trailing_zeros() {
-        // When we parse "1.500", it should round-trip to "1.5" (trailing zeros removed)
         let amount = TokenAmount::from_human("1.500", token(18, None)).unwrap();
         assert_eq!(amount.human(), "1.5");
     }
-
-    // ========== Tests for Display trait (old - will be updated below) ==========
-
-    // ========== Edge cases and boundary tests ==========
 
     #[test]
     fn test_max_u128() {
         let amount = TokenAmount::new(u128::MAX, token(18, None));
         assert_eq!(amount.raw, u128::MAX);
-        // human() should still work even with max value
         let human = amount.human();
         assert!(!human.is_empty());
     }
 
     #[test]
     fn test_different_decimal_precisions() {
-        // Test various decimal precisions
         for decimals in [0, 1, 6, 8, 18] {
             let amount = TokenAmount::new(100, token(decimals, None));
             assert_eq!(amount.decimals(), decimals);
@@ -379,7 +348,6 @@ mod tests {
 
     #[test]
     fn test_fractional_part_exactly_at_decimals() {
-        // Fractional part exactly matching decimals should work
         let amount = TokenAmount::from_human("1.123456", token(6, None)).unwrap();
         assert_eq!(amount.raw, 1123456);
         assert_eq!(amount.human(), "1.123456");
@@ -387,7 +355,6 @@ mod tests {
 
     #[test]
     fn test_very_small_fractional() {
-        // Test with a very small fractional part
         let amount = TokenAmount::from_human("0.000000000000000001", token(18, None)).unwrap();
         assert_eq!(amount.raw, 1);
         assert_eq!(amount.human(), "0.000000000000000001");
@@ -399,8 +366,6 @@ mod tests {
         assert_eq!(amount.raw, 500000000000000000);
         assert_eq!(amount.human(), "0.5");
     }
-
-    // ========== Tests for `Add` trait (operator +) ==========
 
     #[test]
     fn test_add_same_decimals() {
@@ -417,7 +382,7 @@ mod tests {
     fn test_add_different_decimals() {
         let a = TokenAmount::new(1000000000000000000, token(18, None));
         let b = TokenAmount::new(1000000, token(6, None));
-        let _sum = a + b; // Should panic
+        let _sum = a + b;
     }
 
     #[test]
@@ -430,13 +395,11 @@ mod tests {
 
     #[test]
     fn test_add_symbol_handling() {
-        // Same token (native_eth): sum preserves token/symbol
         let a = TokenAmount::native_eth(1000000000000000000);
         let b = TokenAmount::native_eth(500000000000000000);
         let sum = a + b;
         assert_eq!(sum.symbol(), Some("ETH"));
 
-        // Same token (no symbol): sum has no symbol
         let a2 = TokenAmount::new(1000000000000000000, token(18, None));
         let b2 = TokenAmount::new(500000000000000000, token(18, None));
         let sum2 = a2 + b2;
@@ -463,8 +426,6 @@ mod tests {
             _ => panic!("Expected TokenMismatch error"),
         }
     }
-
-    // ========== Tests for `Mul` trait (operator *) ==========
 
     #[test]
     fn test_mul_u128() {
@@ -535,8 +496,6 @@ mod tests {
             _ => panic!("Expected Overflow error"),
         }
     }
-
-    // ========== Tests for `Display` trait (updated) ==========
 
     #[test]
     fn test_display_with_symbol() {

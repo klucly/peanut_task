@@ -1,8 +1,6 @@
 use peanut_task::core::transaction_receipt::{TransactionReceipt, TransactionReceiptError};
 use serde_json::json;
 
-// ========== Tests for `tx_fee()` ==========
-
 #[test]
 fn test_tx_fee_basic() {
     let receipt = TransactionReceipt {
@@ -10,15 +8,14 @@ fn test_tx_fee_basic() {
         block_number: 1000,
         status: true,
         gas_used: 21000,
-        effective_gas_price: 20000000000, // 20 gwei
+        effective_gas_price: 20000000000,
         logs: vec![],
     };
-    
+
     let fee = receipt.tx_fee();
-    // 21000 * 20000000000 = 420000000000000 wei
     assert_eq!(fee.raw, 420000000000000);
     assert_eq!(fee.decimals(), 18);
-    assert_eq!(fee.symbol().map(|s| s.as_str()), Some("ETH"));
+    assert_eq!(fee.symbol(), Some("ETH"));
 }
 
 #[test]
@@ -35,7 +32,7 @@ fn test_tx_fee_zero_gas() {
     let fee = receipt.tx_fee();
     assert_eq!(fee.raw, 0);
     assert_eq!(fee.decimals(), 18);
-    assert_eq!(fee.symbol().map(|s| s.as_str()), Some("ETH"));
+    assert_eq!(fee.symbol(), Some("ETH"));
 }
 
 #[test]
@@ -60,33 +57,28 @@ fn test_tx_fee_large_values() {
         block_number: 1000,
         status: true,
         gas_used: 1000000,
-        effective_gas_price: 100000000000, // 100 gwei
+        effective_gas_price: 100000000000,
         logs: vec![],
     };
-    
+
     let fee = receipt.tx_fee();
-    // 1000000 * 100000000000 = 100000000000000000 wei
     assert_eq!(fee.raw, 100000000000000000);
 }
 
 #[test]
 fn test_tx_fee_very_large() {
-    // Test with values that require u128 for multiplication
     let receipt = TransactionReceipt {
         tx_hash: "0x123...".to_string(),
         block_number: 1000,
         status: true,
         gas_used: 10000000,
-        effective_gas_price: 1000000000000, // 1000 gwei
+        effective_gas_price: 1000000000000,
         logs: vec![],
     };
     
     let fee = receipt.tx_fee();
-    // 10000000 * 1000000000000 = 10000000000000000000 wei
     assert_eq!(fee.raw, 10000000000000000000);
 }
-
-// ========== Tests for `from_web3()` - Valid inputs ==========
 
 #[test]
 fn test_from_web3_basic_hex_strings() {
@@ -181,8 +173,6 @@ fn test_from_web3_with_logs() {
     assert_eq!(receipt.logs.len(), 1);
     
     let log = &receipt.logs[0];
-    // Addresses are case-insensitive, so compare case-insensitively
-    // The address will be automatically checksummed by Address::from_string
     assert_eq!(log.address.lower(), "0x742d35cc6634c0532925a3b844bc9e7595f0beb0");
     assert_eq!(log.topics.len(), 3);
     assert_eq!(log.topics[0], "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef");
@@ -213,7 +203,6 @@ fn test_from_web3_multiple_logs() {
     
     let receipt = TransactionReceipt::from_web3(receipt_json).unwrap();
     assert_eq!(receipt.logs.len(), 2);
-    // Addresses are case-insensitive, so compare case-insensitively
     assert_eq!(receipt.logs[0].address.lower(), "0x1111111111111111111111111111111111111111");
     assert_eq!(receipt.logs[1].address.lower(), "0x2222222222222222222222222222222222222222");
     assert_eq!(receipt.logs[0].topics.len(), 1);
@@ -245,7 +234,6 @@ fn test_from_web3_log_without_topics() {
 
 #[test]
 fn test_from_web3_hex_without_prefix() {
-    // Some web3 libraries might return hex without 0x prefix
     let receipt_json = json!({
         "transactionHash": "0xabc...",
         "blockNumber": "3e8", // No 0x prefix
@@ -263,7 +251,6 @@ fn test_from_web3_hex_without_prefix() {
 
 #[test]
 fn test_from_web3_status_hex_variations() {
-    // Test different hex status formats
     let receipt1 = json!({
         "transactionHash": "0xabc...",
         "blockNumber": "0x3e8",
@@ -301,8 +288,6 @@ fn test_from_web3_large_block_number() {
     let receipt = TransactionReceipt::from_web3(receipt_json).unwrap();
     assert_eq!(receipt.block_number, u64::MAX);
 }
-
-// ========== Tests for `from_web3()` - Error cases ==========
 
 #[test]
 fn test_from_web3_missing_transaction_hash() {
@@ -671,8 +656,6 @@ fn test_from_web3_logs_not_array() {
     }
 }
 
-// ========== Integration tests ==========
-
 #[test]
 fn test_tx_fee_after_from_web3() {
     let receipt_json = json!({
@@ -686,16 +669,13 @@ fn test_tx_fee_after_from_web3() {
     
     let receipt = TransactionReceipt::from_web3(receipt_json).unwrap();
     let fee = receipt.tx_fee();
-    
-    // Verify the fee calculation
-    assert_eq!(fee.raw, 420000000000000); // 21000 * 20000000000
+    assert_eq!(fee.raw, 420000000000000);
     assert_eq!(fee.decimals(), 18);
-    assert_eq!(fee.symbol().map(|s| s.as_str()), Some("ETH"));
+    assert_eq!(fee.symbol(), Some("ETH"));
 }
 
 #[test]
 fn test_receipt_with_complex_logs() {
-    // Test a realistic receipt with multiple logs and various topic counts
     let receipt_json = json!({
         "transactionHash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         "blockNumber": "0x1a2b3c",
@@ -734,8 +714,6 @@ fn test_receipt_with_complex_logs() {
     assert_eq!(receipt.logs[1].topics.len(), 3);
     assert_eq!(receipt.logs[2].topics.len(), 0);
     
-    // Verify fee calculation
     let fee = receipt.tx_fee();
-    // 100000 * 25000000000 = 2500000000000000 wei
     assert_eq!(fee.raw, 2500000000000000);
 }

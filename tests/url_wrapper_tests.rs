@@ -52,11 +52,9 @@ fn test_invalid_url_error() {
 
 #[test]
 fn test_different_placeholder_positions() {
-    // Key at the end
     let rpc_url = RpcUrl::new("https://api.example.com/v1?key={}", "secret").unwrap();
     assert_eq!(rpc_url.redacted(), "https://api.example.com/v1?key=****");
-    
-    // Key in the middle
+
     let rpc_url = RpcUrl::new("https://api.example.com/v1?key={}&other=value", "secret").unwrap();
     assert_eq!(rpc_url.redacted(), "https://api.example.com/v1?key=****&other=value");
 }

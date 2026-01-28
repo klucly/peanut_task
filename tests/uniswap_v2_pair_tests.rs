@@ -20,7 +20,6 @@ fn token1() -> TokenInPair {
     )
 }
 
-/// USDC-like token (6 decimals) for ETH/USDC pair tests.
 fn usdc_token_in_pair() -> TokenInPair {
     TokenInPair::new(
         Token::new(6, None),
@@ -34,28 +33,22 @@ fn make_pair(reserve0: u128, reserve1: u128, fee_bps: u16) -> UniswapV2Pair {
 
 #[test]
 fn test_get_amount_out_basic() {
-    // 1000 ETH / 2M USDC pool, buy 1 ETH worth (2000 USDC in).
     let pair = UniswapV2Pair::new(
         pair_address(),
-        token0(),  // ETH, 18 decimals
-        usdc_token_in_pair(), // USDC, 6 decimals
+        token0(),
+        usdc_token_in_pair(),
         1000 * 10u128.pow(18),
         2_000_000 * 10u128.pow(6),
         30,
     );
     let usdc_in = TokenAmount::new(2000 * 10u128.pow(6), usdc_token_in_pair().token.clone());
     let eth_out = pair.get_amount_out(&usdc_in).unwrap();
-    // Slightly less than 1 ETH due to fee + impact.
     assert!(eth_out.raw < 10u128.pow(18), "expected less than 1 ETH, got {}", eth_out.raw);
     assert!(eth_out.raw > 99 * 10u128.pow(16), "expected more than 0.99 ETH, got {}", eth_out.raw);
 }
 
 #[test]
 fn test_get_amount_out_matches_solidity_formula() {
-    // amount_in_with_fee = amount_in * (10000 - 30) = 100 * 9970 = 997_000
-    // numerator = 997_000 * 2000 = 1_994_000_000
-    // denominator = 1000 * 10000 + 997_000 = 10_000_000 + 997_000 = 10_997_000
-    // amount_out = 1_994_000_000 / 10_997_000 = 181
     let pair = make_pair(1000, 2000, 30);
     let t0 = token0();
     let amt_in = TokenAmount::new(100, t0.token.clone());
@@ -65,7 +58,6 @@ fn test_get_amount_out_matches_solidity_formula() {
 
 #[test]
 fn test_integer_math_no_floats() {
-    // Large numbers that would lose precision with float; core path uses u128 only (no overflow).
     let reserve = 10u128.pow(18);
     let t0 = token0();
     let amount_in = TokenAmount::new(10u128.pow(15), t0.token.clone());
@@ -81,11 +73,6 @@ fn test_get_amount_out_token1_in() {
     let t1 = token1();
     let amt_in = TokenAmount::new(100, t1.token.clone());
     let out = pair.get_amount_out(&amt_in).unwrap();
-    // reserve_in=2000, reserve_out=1000, amount_in=100
-    // amount_in_with_fee = 100 * 9970 = 997_000
-    // numerator = 997_000 * 1000 = 997_000_000
-    // denominator = 2000*10000 + 997_000 = 20_997_000
-    // amount_out = 997_000_000 / 20_997_000 = 47
     assert_eq!(out.raw, 47);
 }
 
@@ -97,7 +84,6 @@ fn test_get_amount_in_roundtrip() {
     let amount_in = TokenAmount::new(100_000, t0.token.clone());
     let amount_out = pair.get_amount_out(&amount_in).unwrap();
     let amount_in_req = pair.get_amount_in(&amount_out).unwrap();
-    // get_amount_in rounds up, so we need at least amount_in
     assert!(amount_in_req.raw >= amount_in.raw);
 }
 
@@ -116,7 +102,6 @@ fn test_get_amount_in_for_desired_out() {
 fn test_get_spot_price_token0_in() {
     let pair = make_pair(1000, 2000, 30);
     let price = pair.get_spot_price(&pair.token0.token).unwrap();
-    // reserve_out/reserve_in = 2000/1000 = 2; use Decimal arithmetic for calculations
     assert_eq!(price, Decimal::from(2u8));
     assert_eq!((price * Decimal::from(100u64)).trunc(), Decimal::from(200u64));
     assert_eq!(price.round_dp(8).to_string(), "2");
@@ -126,7 +111,6 @@ fn test_get_spot_price_token0_in() {
 fn test_get_spot_price_token1_in() {
     let pair = make_pair(1000, 2000, 30);
     let price = pair.get_spot_price(&pair.token1.token).unwrap();
-    // reserve_out/reserve_in = 1000/2000 = 0.5
     assert_eq!(price, Decimal::from(5u8) / Decimal::from(10u8));
     assert_eq!((price * Decimal::from(100u64)).trunc(), Decimal::from(50u64));
 }
@@ -136,7 +120,6 @@ fn test_get_execution_price() {
     let pair = make_pair(1000, 2000, 30);
     let amount_in = TokenAmount::new(100, pair.token0.token.clone());
     let price = pair.get_execution_price(&amount_in).unwrap();
-    // execution price = amount_out/amount_in = 181/100; use for precise calculations
     assert_eq!((price * Decimal::from(100u64)).trunc(), Decimal::from(181u64));
     assert_eq!(price.round_dp(2).to_string(), "1.81");
 }
@@ -146,7 +129,6 @@ fn test_get_price_impact_non_zero() {
     let pair = make_pair(1_000_000, 2_000_000, 30);
     let amount_in = TokenAmount::new(100_000, pair.token0.token.clone());
     let impact = pair.get_price_impact(&amount_in).unwrap();
-    // Impact as Decimal; use (impact * 10000).trunc() for bps
     let bps = (impact * Decimal::from(10000u64)).trunc();
     assert!(bps > Decimal::ZERO);
     assert!(impact > Decimal::ZERO);
@@ -185,7 +167,6 @@ fn test_simulate_swap_then_spot_price() {
     let after = pair.simulate_swap(&amt_in).unwrap();
     let spot_before = pair.get_spot_price(&pair.token0.token).unwrap();
     let spot_after = after.get_spot_price(&pair.token0.token).unwrap();
-    // After selling token0 into the pair, reserve0 went up, reserve1 down -> price goes down
     assert!(spot_after < spot_before);
 }
 
@@ -207,7 +188,6 @@ fn test_token_not_in_pair_get_spot_price() {
 
 #[test]
 fn test_get_price_impact_calculations() {
-    // Impact as Decimal (0 = 0%, 1 = 100%); use impact * amount for calculations
     let pair = make_pair(100_000, 200_000, 30);
     let amount_in = TokenAmount::new(10_000, pair.token0.token.clone());
     let impact = pair.get_price_impact(&amount_in).unwrap();
@@ -217,7 +197,6 @@ fn test_get_price_impact_calculations() {
     let _impact_on_amount = impact * Decimal::from(1000u64);
 }
 
-/// Builds a ChainClient using INFURA_API_KEY. Returns None if the env var is not set or is the placeholder "apikey" (test will skip).
 fn chain_client_with_infura() -> Option<ChainClient> {
     let api_key = std::env::var("INFURA_API_KEY").ok()?;
     if api_key.trim().eq_ignore_ascii_case("apikey") {
@@ -233,7 +212,6 @@ fn test_from_chain_fetches_pair() {
         Some(c) => c,
         None => return,
     };
-    // Uniswap V2 WETH/USDC pair on Ethereum mainnet
     let pair_address = Address::from_string("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc").unwrap();
     let pair = UniswapV2Pair::from_chain(pair_address.clone(), &client).unwrap();
     assert_eq!(pair.address, pair_address);
@@ -251,7 +229,6 @@ fn test_from_chain_spot_and_amount_out_work() {
     };
     let pair_address = Address::from_string("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc").unwrap();
     let pair = UniswapV2Pair::from_chain(pair_address, &client).unwrap();
-    // from_chain gives both tokens Token::new(18, None); we use token0 as "in" for spot and amount_out
     let spot0 = pair.get_spot_price(&pair.token0.token).unwrap();
     assert!(spot0 > Decimal::ZERO);
     let amt_in = TokenAmount::new(1_000_000u128, pair.token0.token.clone());

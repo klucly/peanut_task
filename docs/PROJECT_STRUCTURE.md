@@ -52,6 +52,8 @@ Core is organized into modules: `address`, `utility`, `signatures`, `token`, `to
 ### wallet_manager
 - `WalletManager::from_hex_string`, `from_env`, `generate`, `address`, `public_key`
 - `sign_message` (EIP-191), `sign_typed_data` (EIP-712), `sign_transaction`
+- `Display` / `ToString`: show only `WalletManager(0x<address>)`; private key never printed (security).
+- `Debug`: shows only `address` (derived); key material never in logs or panic output.
 
 ### base_types
 Re-exports only: from utility (so `Address`, `AddressError` come via utility from address), signatures, token_amount, token (`Token` only; no address in core), transaction_receipt.
