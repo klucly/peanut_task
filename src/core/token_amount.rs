@@ -36,7 +36,7 @@ impl TokenAmount {
         self.token.decimals()
     }
 
-    pub fn symbol(&self) -> Option<&String> {
+    pub fn symbol(&self) -> Option<&str> {
         self.token.symbol()
     }
 
@@ -128,7 +128,21 @@ impl Add for TokenAmount {
     }
 }
 
-macro_rules! impl_mul_for_int {
+macro_rules! impl_mul_for_unsigned {
+    ($($t:ty),*) => {
+        $(
+            impl Mul<$t> for TokenAmount {
+                type Output = Self;
+
+                fn mul(self, factor: $t) -> Self {
+                    self.try_mul(factor as u128).expect("TokenAmount multiplication failed")
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! impl_mul_for_signed {
     ($($t:ty),*) => {
         $(
             impl Mul<$t> for TokenAmount {
@@ -140,7 +154,6 @@ macro_rules! impl_mul_for_int {
                     } else {
                         factor as u128
                     };
-
                     self.try_mul(factor_u128).expect("TokenAmount multiplication failed")
                 }
             }
@@ -148,8 +161,8 @@ macro_rules! impl_mul_for_int {
     };
 }
 
-impl_mul_for_int!(u8, u16, u32, u64, u128);
-impl_mul_for_int!(i8, i16, i32, i64, i128);
+impl_mul_for_unsigned!(u8, u16, u32, u64, u128);
+impl_mul_for_signed!(i8, i16, i32, i64, i128);
 
 impl fmt::Display for TokenAmount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

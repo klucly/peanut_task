@@ -1,3 +1,4 @@
+/// Currency identity: decimals and optional symbol. No address in core.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub decimals: u8,
@@ -17,7 +18,8 @@ impl Token {
         self.decimals
     }
 
-    pub fn symbol(&self) -> Option<&String> {
-        self.symbol.as_ref()
+    /// Returns the symbol as `&str` when present.
+    pub fn symbol(&self) -> Option<&str> {
+        self.symbol.as_deref()
     }
 }

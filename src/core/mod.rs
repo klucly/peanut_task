@@ -1,8 +1,8 @@
 pub mod address;
 pub mod utility;
 pub mod signatures;
-pub mod token_amount;
 pub mod token;
+pub mod token_amount;
 pub mod transaction_receipt;
 pub mod base_types;
 pub mod wallet_manager;

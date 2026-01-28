@@ -14,7 +14,7 @@ mod tests {
         let amount = TokenAmount::native_eth(1000000000000000000);
         assert_eq!(amount.raw, 1000000000000000000);
         assert_eq!(amount.decimals(), 18);
-        assert_eq!(amount.symbol().map(|s| s.as_str()), Some("ETH"));
+        assert_eq!(amount.symbol(), Some("ETH"));
     }
 
     #[test]
@@ -46,7 +46,7 @@ mod tests {
         let amount = TokenAmount::from_human_native_eth("100").unwrap();
         assert_eq!(amount.raw, 100000000000000000000);
         assert_eq!(amount.decimals(), 18);
-        assert_eq!(amount.symbol().map(|s| s.as_str()), Some("ETH"));
+        assert_eq!(amount.symbol(), Some("ETH"));
     }
 
     #[test]
@@ -68,7 +68,7 @@ mod tests {
         let amount = TokenAmount::from_human("100", token(6, Some("USDC"))).unwrap();
         assert_eq!(amount.raw, 100000000);
         assert_eq!(amount.decimals(), 6);
-        assert_eq!(amount.symbol().map(|s| s.as_str()), Some("USDC"));
+        assert_eq!(amount.symbol(), Some("USDC"));
     }
 
     #[test]
@@ -409,7 +409,7 @@ mod tests {
         let sum = a + b;
         assert_eq!(sum.raw, 1500000000000000000);
         assert_eq!(sum.decimals(), 18);
-        assert_eq!(sum.symbol().map(|s| s.as_str()), Some("ETH"));
+        assert_eq!(sum.symbol(), Some("ETH"));
     }
 
     #[test]
@@ -434,7 +434,7 @@ mod tests {
         let a = TokenAmount::native_eth(1000000000000000000);
         let b = TokenAmount::native_eth(500000000000000000);
         let sum = a + b;
-        assert_eq!(sum.symbol().map(|s| s.as_str()), Some("ETH"));
+        assert_eq!(sum.symbol(), Some("ETH"));
 
         // Same token (no symbol): sum has no symbol
         let a2 = TokenAmount::new(1000000000000000000, token(18, None));
@@ -472,7 +472,7 @@ mod tests {
         let doubled = amount * 2u128;
         assert_eq!(doubled.raw, 2000000000000000000);
         assert_eq!(doubled.decimals(), 18);
-        assert_eq!(doubled.symbol().map(|s| s.as_str()), Some("ETH"));
+        assert_eq!(doubled.symbol(), Some("ETH"));
     }
 
     #[test]

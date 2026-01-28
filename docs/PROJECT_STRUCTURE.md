@@ -6,7 +6,7 @@ Rust library for Ethereum wallet operations: EIP-191/EIP-712 signing, transactio
 
 ## Core
 
-Core is organized into modules: `address`, `utility`, `signatures`, `token_amount`, `token`, `transaction_receipt`, `base_types`, `wallet_manager`, `serializer`, `signature_algorithms`. The `address` module defines `Address` and `AddressError`; `utility` re-exports them so existing imports (e.g. from `base_types`) remain valid.
+Core is organized into modules: `address`, `utility`, `signatures`, `token`, `token_amount`, `transaction_receipt`, `base_types`, `wallet_manager`, `serializer`, `signature_algorithms`. The `address` module defines `Address` and `AddressError`; `utility` re-exports them so existing imports (e.g. from `base_types`) remain valid. `token` is declared before `token_amount` (dependency order).
 
 ### address (`core/address.rs`)
 - Defines `Address` and `AddressError` (moved out of utility to break dependency cycles and support token abstraction).
@@ -25,15 +25,16 @@ Core is organized into modules: `address`, `utility`, `signatures`, `token_amoun
 - `Signature::new`, `to_bytes`, `to_hex`
 - `SignedMessage::new` (verifies before creating), `verify`, `recover_signer`, `algorithm`
 
+### token (`core/token.rs`)
+- **Token** — currency identity: `decimals`, `symbol`. No address in core. `Token::new(decimals, symbol)`, `Token::native_eth()` = 18 decimals, "ETH". `decimals()`, `symbol()` → `Option<&str>`.
+
 ### token_amount
 - `TokenAmount { raw, token }` — amount of a currency; identity from `Token` only (no address in core)
 - `TokenAmount::new(raw, token: Token)`, `from_human(amount, token: Token)`, `human()` (no floats)
 - `TokenAmount::native_eth(raw)`, `from_human_native_eth(amount)` — native ETH (tx value, balance, fee) = `new(raw, Token::native_eth())`
-- `decimals()`, `symbol()` — from `token`
+- `decimals()`, `symbol()` → `Option<&str>` (from `token`)
 - `try_add`, `try_mul` — require same token; `TokenAmountError::TokenMismatch`, `Overflow`
-
-### token (`core/token.rs`)
-- **Token** — currency only: `decimals`, `symbol`. No address in core. `Token::new(decimals, symbol)`, `Token::native_eth()` = 18 decimals, "ETH".
+- `Mul<u8|u16|u32|u64|u128>` (no negative check); `Mul<i8|…|i128>` panics on negative factor.
 
 ### transaction_receipt
 - Uses `address::Address` for `Log.address`.
