@@ -1,6 +1,6 @@
+use peanut_task::core::base_types::{Address, TokenAmount};
+use peanut_task::core::utility::Transaction;
 use peanut_task::core::wallet_manager::{WalletManager, TransactionError};
-use peanut_task::core::utility::{Transaction, Address};
-use peanut_task::core::token_amount::TokenAmount;
 
 #[test]
 fn test_valid_address_passes_validation() {
@@ -10,7 +10,7 @@ fn test_valid_address_passes_validation() {
 
     let tx = Transaction {
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap(),
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -35,7 +35,7 @@ fn test_none_address_passes_validation() {
 
     let tx = Transaction {
         to: Address::from_string("0x0000000000000000000000000000000000000000").unwrap(), // Zero address for contract creation
-        value: TokenAmount::new(0, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(0),
         data: vec![0x60, 0x60, 0x60], // Some init code
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -60,7 +60,7 @@ fn test_address_missing_0x_prefix_fails() {
             // This will fail validation, but we want to test the error case
             Address { value: "742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string() }
         }), // Missing 0x
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -90,7 +90,7 @@ fn test_address_too_short_fails() {
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb").unwrap_or_else(|_| {
             Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb".to_string() }
         }), // 41 chars (too short)
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -120,7 +120,7 @@ fn test_address_too_long_fails() {
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb00").unwrap_or_else(|_| {
             Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb00".to_string() }
         }), // 43 chars (too long)
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -150,7 +150,7 @@ fn test_address_with_invalid_hex_characters_fails() {
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbG").unwrap_or_else(|_| {
             Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbG".to_string() }
         }), // Invalid 'G' character
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -180,7 +180,7 @@ fn test_address_with_special_characters_fails() {
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb@").unwrap_or_else(|_| {
             Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb@".to_string() }
         }), // Invalid '@' character
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -202,7 +202,7 @@ fn test_address_with_uppercase_and_lowercase_hex_passes() {
     // Test with mixed case (valid hex)
     let tx = Transaction {
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap(), // Mixed case is valid
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -223,7 +223,7 @@ fn test_address_all_lowercase_passes() {
 
     let tx = Transaction {
         to: Address::from_string("0x742d35cc6634c0532925a3b844bc9e7595f0beb0").unwrap(), // All lowercase
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -244,7 +244,7 @@ fn test_address_all_uppercase_passes() {
 
     let tx = Transaction {
         to: Address::from_string("0x742D35CC6634C0532925A3B844BC9E7595F0BEB0").unwrap(), // All uppercase
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -267,7 +267,7 @@ fn test_empty_address_fails() {
         to: Address::from_string("").unwrap_or_else(|_| {
             Address { value: "".to_string() }
         }), // Empty string
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -290,7 +290,7 @@ fn test_address_with_only_0x_prefix_fails() {
         to: Address::from_string("0x").unwrap_or_else(|_| {
             Address { value: "0x".to_string() }
         }), // Only prefix, no hex
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),
@@ -312,7 +312,7 @@ fn test_well_known_address_passes() {
 
     let tx = Transaction {
         to: Address::from_string("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266").unwrap(), // Hardhat/Anvil test address
-        value: TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string())),
+        value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
         nonce: Some(0),
         gas_limit: Some(21000),

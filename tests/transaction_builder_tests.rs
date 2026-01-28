@@ -62,7 +62,7 @@ fn test_fluent_chaining_to_value_data() {
     let client = make_client();
     let wallet = make_wallet();
     let to = Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap();
-    let value = TokenAmount::from_human("0.1", 18, None).unwrap();
+    let value = TokenAmount::from_human_native_eth("0.1").unwrap();
     let builder = TransactionBuilder::new(&client, &wallet)
         .to(to)
         .value(value)

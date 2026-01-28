@@ -10,7 +10,7 @@ pub use super::token_amount::{
     TokenAmount, TokenAmountError
 };
 
-pub use super::token_info::TokenInfo;
+pub use super::token::Token;
 
 pub use super::transaction_receipt::{
     TransactionReceipt, Log, TransactionReceiptError

@@ -1,4 +1,4 @@
-use crate::core::base_types::{Address, TokenAmount, TokenInfo, Transaction};
+use crate::core::base_types::{Address, TokenAmount, Token, Transaction};
 use crate::chain::ChainClient;
 use hex;
 use rust_decimal::prelude::FromPrimitive;
@@ -10,11 +10,24 @@ fn u128_to_decimal(n: u128) -> Result<Decimal, UniswapV2PairError> {
     Decimal::from_u128(n).ok_or(UniswapV2PairError::Overflow)
 }
 
+/// Token in a pair: currency + contract address for reserve lookup. Swap/pricing only; not in core.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenInPair {
+    pub token: Token,
+    pub address: Address,
+}
+
+impl TokenInPair {
+    pub fn new(token: Token, address: Address) -> Self {
+        Self { token, address }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UniswapV2Pair {
     pub address: Address,
-    pub token0: TokenInfo,
-    pub token1: TokenInfo,
+    pub token0: TokenInPair,
+    pub token1: TokenInPair,
     pub reserve0: u128,
     pub reserve1: u128,
     pub fee_bps: u16,
@@ -37,8 +50,8 @@ const FEE_DENOM: u128 = 10000;
 impl UniswapV2Pair {
     pub fn new(
         address: Address,
-        token0: TokenInfo,
-        token1: TokenInfo,
+        token0: TokenInPair,
+        token1: TokenInPair,
         reserve0: u128,
         reserve1: u128,
         fee_bps: u16,
@@ -53,9 +66,10 @@ impl UniswapV2Pair {
         }
     }
 
-    pub fn get_amount_out(&self, amount_in: u128, token_in: &TokenInfo) -> Result<u128, UniswapV2PairError> {
-        let (reserve_in, reserve_out) = self.reserves_for(token_in)?;
-        let amount_in_with_fee = amount_in
+    pub fn get_amount_out(&self, amount_in: &TokenAmount) -> Result<TokenAmount, UniswapV2PairError> {
+        let (reserve_in, reserve_out) = self.reserves_for_token(&amount_in.token)?;
+        let amount_in_raw = amount_in.raw;
+        let amount_in_with_fee = amount_in_raw
             .checked_mul(FEE_DENOM - self.fee_bps as u128)
             .ok_or(UniswapV2PairError::Overflow)?;
         let numerator = amount_in_with_fee
@@ -65,29 +79,32 @@ impl UniswapV2Pair {
             .checked_mul(FEE_DENOM)
             .and_then(|d| d.checked_add(amount_in_with_fee))
             .ok_or(UniswapV2PairError::Overflow)?;
-        Ok(numerator / denominator)
+        let raw_out = numerator / denominator;
+        let token_out = self.other_token_for(&amount_in.token)?;
+        Ok(TokenAmount::new(raw_out, token_out))
     }
 
-    pub fn get_amount_in(&self, amount_out: u128, token_out: &TokenInfo) -> Result<u128, UniswapV2PairError> {
-        let (reserve_in, reserve_out) = self.reserves_for_token_out(token_out)?;
-        let numerator = amount_out
+    pub fn get_amount_in(&self, amount_out: &TokenAmount) -> Result<TokenAmount, UniswapV2PairError> {
+        let (reserve_in, reserve_out) = self.reserves_for_token_out(&amount_out.token)?;
+        let numerator = amount_out.raw
             .checked_mul(reserve_in)
             .and_then(|n| n.checked_mul(FEE_DENOM))
             .ok_or(UniswapV2PairError::Overflow)?;
         let denominator = reserve_out
-            .checked_sub(amount_out)
+            .checked_sub(amount_out.raw)
             .ok_or(UniswapV2PairError::Overflow)?
             .checked_mul(FEE_DENOM - self.fee_bps as u128)
             .ok_or(UniswapV2PairError::Overflow)?;
         if denominator == 0 {
             return Err(UniswapV2PairError::Overflow);
         }
-        let amount_in = (numerator + denominator - 1) / denominator;
-        Ok(amount_in)
+        let raw_in = (numerator + denominator - 1) / denominator;
+        let token_in = self.other_token_for(&amount_out.token)?;
+        Ok(TokenAmount::new(raw_in, token_in))
     }
 
-    pub fn get_spot_price(&self, token_in: &TokenInfo) -> Result<Decimal, UniswapV2PairError> {
-        let (reserve_in, reserve_out) = self.reserves_for(token_in)?;
+    pub fn get_spot_price(&self, token_in: &Token) -> Result<Decimal, UniswapV2PairError> {
+        let (reserve_in, reserve_out) = self.reserves_for_token(token_in)?;
         if reserve_in == 0 {
             return Ok(Decimal::ZERO);
         }
@@ -96,36 +113,39 @@ impl UniswapV2Pair {
         Ok(out / inn)
     }
 
-    pub fn get_execution_price(&self, amount_in: u128, token_in: &TokenInfo) -> Result<Decimal, UniswapV2PairError> {
-        let amount_out = self.get_amount_out(amount_in, token_in)?;
-        if amount_in == 0 {
+    pub fn get_execution_price(
+        &self,
+        amount_in: &TokenAmount,
+    ) -> Result<Decimal, UniswapV2PairError> {
+        let amount_out = self.get_amount_out(amount_in)?;
+        if amount_in.raw == 0 {
             return Ok(Decimal::ZERO);
         }
-        let out = u128_to_decimal(amount_out)?;
-        let inn = u128_to_decimal(amount_in)?;
+        let out = u128_to_decimal(amount_out.raw)?;
+        let inn = u128_to_decimal(amount_in.raw)?;
         Ok(out / inn)
     }
 
-    pub fn get_price_impact(&self, amount_in: u128, token_in: &TokenInfo) -> Result<Decimal, UniswapV2PairError> {
-        let (reserve_in, reserve_out) = self.reserves_for(token_in)?;
-        let amount_out = self.get_amount_out(amount_in, token_in)?;
-        if reserve_in == 0 || amount_in == 0 {
+    pub fn get_price_impact(&self, amount_in: &TokenAmount) -> Result<Decimal, UniswapV2PairError> {
+        let (reserve_in, reserve_out) = self.reserves_for_token(&amount_in.token)?;
+        let amount_out = self.get_amount_out(amount_in)?;
+        if reserve_in == 0 || amount_in.raw == 0 {
             return Ok(Decimal::ZERO);
         }
-        let spot_val = u128_to_decimal(reserve_out * amount_in)?;
-        let exec_val = u128_to_decimal(amount_out * reserve_in)?;
+        let spot_val = u128_to_decimal(reserve_out * amount_in.raw)?;
+        let exec_val = u128_to_decimal(amount_out.raw * reserve_in)?;
         if spot_val <= exec_val {
             return Ok(Decimal::ZERO);
         }
         Ok((spot_val - exec_val) / spot_val)
     }
 
-    pub fn simulate_swap(&self, amount_in: u128, token_in: &TokenInfo) -> Result<Self, UniswapV2PairError> {
-        let amount_out = self.get_amount_out(amount_in, token_in)?;
-        let (reserve_in, reserve_out) = self.reserves_for(token_in)?;
-        let new_reserve_in = reserve_in + amount_in;
-        let new_reserve_out = reserve_out - amount_out;
-        let (new_reserve0, new_reserve1) = if token_in.address == self.token0.address {
+    pub fn simulate_swap(&self, amount_in: &TokenAmount) -> Result<Self, UniswapV2PairError> {
+        let amount_out = self.get_amount_out(amount_in)?;
+        let (reserve_in, reserve_out) = self.reserves_for_token(&amount_in.token)?;
+        let new_reserve_in = reserve_in + amount_in.raw;
+        let new_reserve_out = reserve_out - amount_out.raw;
+        let (new_reserve0, new_reserve1) = if amount_in.token == self.token0.token {
             (new_reserve_in, new_reserve_out)
         } else {
             (new_reserve_out, new_reserve_in)
@@ -171,31 +191,41 @@ impl UniswapV2Pair {
 
         Ok(Self::new(
             address,
-            TokenInfo::new(token0_addr, 18, None),
-            TokenInfo::new(token1_addr, 18, None),
+            TokenInPair::new(Token::new(18, None), token0_addr),
+            TokenInPair::new(Token::new(18, None), token1_addr),
             reserve0,
             reserve1,
             30,
         ))
     }
 
-    fn reserves_for(&self, token_in: &TokenInfo) -> Result<(u128, u128), UniswapV2PairError> {
-        if token_in.address == self.token0.address {
+    fn reserves_for_token(&self, token: &Token) -> Result<(u128, u128), UniswapV2PairError> {
+        if token == &self.token0.token {
             Ok((self.reserve0, self.reserve1))
-        } else if token_in.address == self.token1.address {
+        } else if token == &self.token1.token {
             Ok((self.reserve1, self.reserve0))
         } else {
-            Err(UniswapV2PairError::TokenNotInPair(token_in.address.to_string()))
+            Err(UniswapV2PairError::TokenNotInPair(format!("{:?}", token)))
         }
     }
 
-    fn reserves_for_token_out(&self, token_out: &TokenInfo) -> Result<(u128, u128), UniswapV2PairError> {
-        if token_out.address == self.token0.address {
+    fn reserves_for_token_out(&self, token: &Token) -> Result<(u128, u128), UniswapV2PairError> {
+        if token == &self.token0.token {
             Ok((self.reserve1, self.reserve0))
-        } else if token_out.address == self.token1.address {
+        } else if token == &self.token1.token {
             Ok((self.reserve0, self.reserve1))
         } else {
-            Err(UniswapV2PairError::TokenNotInPair(token_out.address.to_string()))
+            Err(UniswapV2PairError::TokenNotInPair(format!("{:?}", token)))
+        }
+    }
+
+    fn other_token_for(&self, token: &Token) -> Result<Token, UniswapV2PairError> {
+        if token == &self.token0.token {
+            Ok(self.token1.token.clone())
+        } else if token == &self.token1.token {
+            Ok(self.token0.token.clone())
+        } else {
+            Err(UniswapV2PairError::TokenNotInPair(format!("{:?}", token)))
         }
     }
 }
@@ -223,7 +253,7 @@ fn call_pair(
 ) -> Result<Vec<u8>, UniswapV2PairError> {
     let tx = Transaction {
         to: to.clone(),
-        value: TokenAmount::new(0, 18, None),
+        value: TokenAmount::native_eth(0),
         data: data.to_vec(),
         nonce: None,
         gas_limit: None,

@@ -17,8 +17,8 @@ fn test_tx_fee_basic() {
     let fee = receipt.tx_fee();
     // 21000 * 20000000000 = 420000000000000 wei
     assert_eq!(fee.raw, 420000000000000);
-    assert_eq!(fee.decimals, 18);
-    assert_eq!(fee.symbol, Some("ETH".to_string()));
+    assert_eq!(fee.decimals(), 18);
+    assert_eq!(fee.symbol().map(|s| s.as_str()), Some("ETH"));
 }
 
 #[test]
@@ -34,8 +34,8 @@ fn test_tx_fee_zero_gas() {
     
     let fee = receipt.tx_fee();
     assert_eq!(fee.raw, 0);
-    assert_eq!(fee.decimals, 18);
-    assert_eq!(fee.symbol, Some("ETH".to_string()));
+    assert_eq!(fee.decimals(), 18);
+    assert_eq!(fee.symbol().map(|s| s.as_str()), Some("ETH"));
 }
 
 #[test]
@@ -689,8 +689,8 @@ fn test_tx_fee_after_from_web3() {
     
     // Verify the fee calculation
     assert_eq!(fee.raw, 420000000000000); // 21000 * 20000000000
-    assert_eq!(fee.decimals, 18);
-    assert_eq!(fee.symbol, Some("ETH".to_string()));
+    assert_eq!(fee.decimals(), 18);
+    assert_eq!(fee.symbol().map(|s| s.as_str()), Some("ETH"));
 }
 
 #[test]

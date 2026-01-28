@@ -6,6 +6,7 @@
 
 use peanut_task::core::wallet_manager::WalletManager;
 use peanut_task::core::utility::{Address, Message};
+use peanut_task::core::base_types::Token;
 use peanut_task::core::token_amount::TokenAmount;
 use peanut_task::core::serializer::DeterministicSerializer;
 use serde_json::json;
@@ -413,31 +414,24 @@ fn test_address_case_insensitive_equality() {
 fn test_token_amount_from_human_decimal() {
     // Spec requirement: TokenAmount.from_human("1.5", 18).raw == 1500000000000000000
     
-    let amount = TokenAmount::from_human("1.5", 18, None).unwrap();
+    let amount = TokenAmount::from_human_native_eth("1.5").unwrap();
     assert_eq!(amount.raw, 1500000000000000000,
         "TokenAmount.from_human(\"1.5\", 18) should produce raw value 1500000000000000000");
-    assert_eq!(amount.decimals, 18, "Decimals should be preserved");
+    assert_eq!(amount.decimals(), 18, "Decimals should be preserved");
 }
 
 #[test]
 fn test_token_amount_adding_different_decimals_raises_error() {
     // Spec requirement: Adding TokenAmount with different decimals raises error
     
-    let amount1 = TokenAmount::new(1000000000000000000, 18, Some("ETH".to_string()));
-    let amount2 = TokenAmount::new(1000000, 6, Some("USDC".to_string()));
-    
+    let amount1 = TokenAmount::native_eth(1000000000000000000);
+    let amount2 = TokenAmount::new(1000000, Token::new(6, Some("USDC".to_string())));
     let result = amount1.try_add(&amount2);
-    
-    assert!(result.is_err(), "Adding amounts with different decimals should fail");
-    
+    assert!(result.is_err(), "Adding amounts with different tokens should fail");
     let error = result.unwrap_err();
     let error_msg = error.to_string();
-    
-    // Error should mention decimal mismatch
-    assert!(error_msg.contains("decimals") || error_msg.contains("DecimalMismatch"),
-        "Error message should mention decimal mismatch: {}", error_msg);
-    assert!(error_msg.contains("18") || error_msg.contains("6"),
-        "Error message should mention the decimal values: {}", error_msg);
+    assert!(error_msg.contains("token") || error_msg.contains("TokenMismatch"),
+        "Error message should mention token mismatch: {}", error_msg);
 }
 
 // Spec requirement: TokenAmount arithmetic never uses float internally

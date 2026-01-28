@@ -107,7 +107,7 @@ impl<'a> TransactionBuilder<'a> {
         let value = self
             .value
             .clone()
-            .unwrap_or_else(|| TokenAmount::new(0, 18, Some("ETH".to_string())));
+            .unwrap_or_else(|| TokenAmount::native_eth(0));
         Ok(Transaction {
             to,
             value,
@@ -165,7 +165,7 @@ impl<'a> TransactionBuilder<'a> {
             .ok_or_else(|| TransactionBuilderError::MissingField("to (required for gas estimate)".into()))?;
         let chain_id = self.client.get_chain_id()?;
         let value = self.value.clone().unwrap_or_else(|| {
-            TokenAmount::new(0, 18, Some("ETH".to_string()))
+            TokenAmount::native_eth(0)
         });
         Ok(Transaction {
             to,

@@ -1,7 +1,7 @@
 use thiserror::Error;
 
+use super::address::Address;
 use super::token_amount::TokenAmount;
-use super::utility::Address;
 
 #[derive(Debug, Clone)]
 pub struct Log {
@@ -23,7 +23,7 @@ pub struct TransactionReceipt {
 impl TransactionReceipt {
     pub fn tx_fee(&self) -> TokenAmount {
         let fee_raw = self.gas_used as u128 * self.effective_gas_price as u128;
-        TokenAmount::new(fee_raw, 18, Some("ETH".to_string()))
+        TokenAmount::native_eth(fee_raw)
     }
 
     /// Numeric fields may be hex or number.

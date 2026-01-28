@@ -21,13 +21,10 @@ fn main() {
     }
     
     if rpc_urls.is_empty() {
-        eprintln!("Warning: No RPC URLs configured. Using fallback.");
-        rpc_urls.push(
-            chain::RpcUrl::new("https://mainnet.infura.io/v3/{}", "demo")
-                .expect("Failed to create fallback RPC URL")
-        );
+        eprintln!("Error: No RPC URLs configured. Set INFURA_API_KEY or ALCHEMY_API_KEY.");
+        std::process::exit(1);
     }
-    
+
     let chain_client = chain::chain_client::ChainClient::new(rpc_urls, 10, 1)
         .expect("Failed to create ChainClient: invalid or unreachable RPC URLs");
     
@@ -58,7 +55,7 @@ fn main() {
     .unwrap();
     let built_tx = chain::TransactionBuilder::new(&chain_client, &wallet)
         .to(to_address.clone())
-        .value(core::base_types::TokenAmount::from_human("0.001", 18, None).unwrap())
+        .value(core::base_types::TokenAmount::from_human_native_eth("0.001").unwrap())
         .with_gas_estimate(1.2)
         .unwrap()
         .with_gas_price(chain::gas_price::Priority::Medium)
@@ -74,7 +71,7 @@ fn main() {
 
     let mut tx = core::base_types::Transaction {
         to: to_address.clone(),
-        value: core::base_types::TokenAmount::new(1_000_000_000_000_000u128, 18, Some("ETH".to_string())),
+        value: core::base_types::TokenAmount::native_eth(1_000_000_000_000_000u128),
         data: vec![],
         nonce: Some(nonce_latest),
         gas_limit: None,
@@ -88,7 +85,7 @@ fn main() {
     
     let simple_call_tx = core::base_types::Transaction {
         to: address.clone(),
-        value: core::base_types::TokenAmount::new(0, 18, Some("ETH".to_string())),
+        value: core::base_types::TokenAmount::native_eth(0),
         data: vec![],
         nonce: None,
         gas_limit: None,

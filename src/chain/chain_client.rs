@@ -1,5 +1,5 @@
 use crate::core::base_types::{
-    Address, SignedTransaction, TokenAmount, Transaction, TransactionReceipt
+    Address, SignedTransaction, TokenAmount, Transaction, TransactionReceipt,
 };
 use alloy::primitives::{Address as AlloyAddress, B256};
 use alloy::providers::{Provider, ProviderBuilder};
@@ -84,11 +84,7 @@ impl ChainClient {
                 .map_err(|e| ChainClientError::RpcError(format!("RPC call failed: {}", e)))?;
             let balance_u128 = balance.to::<u128>();
             
-            Ok(TokenAmount::new(
-                balance_u128,
-                18,
-                Some("ETH".to_string()),
-            ))
+            Ok(TokenAmount::native_eth(balance_u128))
         })
     }
 
