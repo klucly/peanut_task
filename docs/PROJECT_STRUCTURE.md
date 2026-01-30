@@ -73,8 +73,8 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 - `get_price_impact(amount_in: &TokenAmount)` → `Decimal` — impact as (spot - execution) / spot
 - `simulate_swap(amount_in: &TokenAmount)` → `Self` — side from `amount_in.token`; new pair with updated reserves (for multi-hop)
 - `reserve_for_token(token: &Token)` → `u128` — reserve of the given token (for sizing / upper bounds)
-- `from_chain(address, client)` — fetch reserves and token0/token1 via `eth_call`; builds `TokenInPair::new(Token::new(18, None), addr)`
-- `UniswapV2PairError`: `TokenNotInPair`, `Chain`, `InvalidResponse`, `Overflow`
+- `from_chain(address, client)` — fetch reserves and token0/token1 via `eth_call`; fetches ERC-20 `decimals()` and `symbol()` from each token contract; both must succeed (errors if symbol missing or call fails; no fallbacks)
+- `UniswapV2PairError`: `TokenNotInPair`, `Chain`, `InvalidResponse`, `Overflow`, `TokenMetadataUnavailable` (decimals/symbol fetch required; no fallbacks)
 - Tests for `from_chain` in `tests/uniswap_v2_pair_tests.rs` run only when `INFURA_API_KEY` is set and not the placeholder `apikey`; otherwise they skip (pass without network call).
 
 ### price_impact_analyzer
@@ -82,11 +82,16 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 - `new(pair: UniswapV2Pair)` — construct from a pair
 - `generate_impact_table(token_in: &Token, sizes: &[u128])` → `Vec<ImpactRow>` — one row per size: `amount_in`, `amount_out`, `spot_price`, `execution_price`, `price_impact_pct`
 - `find_max_size_for_impact(token_in: &Token, max_impact_pct: Decimal)` → `u128` — binary search for largest trade with impact ≤ max_impact_pct
-- `estimate_true_cost(amount_in: &TokenAmount, gas_price_gwei: u64, gas_estimate: u64)` → `TrueCostResult`: gross_output, gas_cost_eth, gas_cost_in_output_token, net_output, effective_price; when output is not ETH, gas_cost_in_output_token = 0 and net_output = gross_output; gas_estimate default per spec 150_000; uses private helpers `gas_cost_wei` and `effective_price`
+- `estimate_true_cost(amount_in: &TokenAmount, gas_price_gwei: u64, gas_estimate: u64)` → `TrueCostResult`: gross_output, gas_cost_eth, gas_cost_in_output_token, net_output, effective_price; errors on overflow (net_output subtraction or decimal conversion); no fallbacks
 - **ImpactRow** — single row: amount_in, amount_out, spot_price, execution_price, price_impact_pct
 - **TrueCostResult** — gross_output, gas_cost_eth, gas_cost_in_output_token, net_output, effective_price
 - **PriceImpactAnalyzerError**: `Pair(UniswapV2PairError)`, `Overflow`
 - Tests in `tests/price_impact_analyzer_tests.rs`: empty sizes, table matches pair methods, token not in pair, zero reserve, max size respects impact, zero amount_in, net output deduction
+
+### price_impact_cli (binary, `scripts/price_impact_cli.rs`)
+- CLI for price impact analysis. Usage: `price_impact_cli <PAIR> --token-in USDC --sizes 1000,10000,...` (or `just price-impact ...`).
+- Requires `INFURA_API_KEY` or `RPC_URL`. Loads pair from chain; token decimals and symbols are fetched from each token contract (ERC-20 `decimals()` / `symbol()`).
+- Output: one-line header (X → Y, pool), reserves, spot price, then one line per size (in → out, exec price, impact %), then max trade for 1% impact.
 
 ## Chain
 
@@ -127,4 +132,4 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 
 ## Build
 
-`just test`, `just lint`, `just build`, `just run`, `just doc`.
+`just test`, `just lint`, `just build`, `just run`, `just doc`. Price impact CLI: `just price-impact <PAIR> --token-in USDC --sizes 1000,10000,...`.

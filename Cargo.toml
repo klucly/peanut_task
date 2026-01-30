@@ -28,3 +28,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "peanut_task"
 path = "src/main.rs"
+
+[[bin]]
+name = "price_impact_cli"
+path = "scripts/price_impact_cli.rs"

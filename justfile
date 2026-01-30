@@ -34,6 +34,11 @@ test-watch *ARGS:
 run *ARGS:
     cargo run -- {{ARGS}}
 
+# Price impact CLI: pair address, --token-in USDC|ETH, --sizes 1000,10000,...
+# Requires INFURA_API_KEY or RPC_URL.
+price-impact *ARGS:
+    cargo run --bin price_impact_cli -- {{ARGS}}
+
 # ────────────────────────────────────────────────
 # Longer / heavier commands
 # ────────────────────────────────────────────────

@@ -27,7 +27,7 @@ pub struct TrueCostResult {
 pub enum PriceImpactAnalyzerError {
     #[error("Pair error: {0}")]
     Pair(#[from] UniswapV2PairError),
-    #[error("Arithmetic overflow")]
+    #[error("Arithmetic overflow (trade size or pool reserves too large for u128 math)")]
     Overflow,
 }
 
@@ -103,8 +103,10 @@ impl PriceImpactAnalyzer {
         } else {
             0
         };
-        let net_output = gross_output.checked_sub(gas_cost_in_output_token).unwrap_or(0);
-        let effective_price = Self::effective_price(amount_in.raw, net_output);
+        let net_output = gross_output
+            .checked_sub(gas_cost_in_output_token)
+            .ok_or(PriceImpactAnalyzerError::Overflow)?;
+        let effective_price = Self::effective_price(amount_in.raw, net_output)?;
         Ok(TrueCostResult {
             gross_output,
             gas_cost_eth,
@@ -122,13 +124,16 @@ impl PriceImpactAnalyzer {
             .ok_or(PriceImpactAnalyzerError::Overflow)
     }
 
-    /// Effective price as net_output / amount_in; ZERO when amount_in is 0.
-    fn effective_price(amount_in_raw: u128, net_output: u128) -> Decimal {
+    /// Effective price as net_output / amount_in. Errors on overflow or when amount_in is 0 (caller must not call with 0 if division is needed).
+    fn effective_price(
+        amount_in_raw: u128,
+        net_output: u128,
+    ) -> Result<Decimal, PriceImpactAnalyzerError> {
         if amount_in_raw == 0 {
-            return Decimal::ZERO;
+            return Ok(Decimal::ZERO);
         }
-        let net_d = Decimal::from_u128(net_output).unwrap_or(Decimal::ZERO);
-        let in_d = Decimal::from_u128(amount_in_raw).unwrap_or(Decimal::ONE);
-        net_d / in_d
+        let net_d = Decimal::from_u128(net_output).ok_or(PriceImpactAnalyzerError::Overflow)?;
+        let in_d = Decimal::from_u128(amount_in_raw).ok_or(PriceImpactAnalyzerError::Overflow)?;
+        Ok(net_d / in_d)
     }
 }

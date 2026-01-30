@@ -1,5 +1,6 @@
 use crate::core::base_types::{Address, TokenAmount, Token, Transaction};
 use crate::chain::ChainClient;
+use alloy::primitives::U256;
 use hex;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -41,8 +42,10 @@ pub enum UniswapV2PairError {
     Chain(#[from] crate::chain::ChainClientError),
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
-    #[error("Arithmetic overflow")]
+    #[error("Arithmetic overflow (trade size or pool reserves too large for u128 math)")]
     Overflow,
+    #[error("Token metadata unavailable: {0}")]
+    TokenMetadataUnavailable(String),
 }
 
 const FEE_DENOM: u128 = 10000;
@@ -72,33 +75,39 @@ impl UniswapV2Pair {
         let amount_in_with_fee = amount_in_raw
             .checked_mul(FEE_DENOM - self.fee_bps as u128)
             .ok_or(UniswapV2PairError::Overflow)?;
-        let numerator = amount_in_with_fee
-            .checked_mul(reserve_out)
-            .ok_or(UniswapV2PairError::Overflow)?;
-        let denominator = reserve_in
-            .checked_mul(FEE_DENOM)
-            .and_then(|d| d.checked_add(amount_in_with_fee))
-            .ok_or(UniswapV2PairError::Overflow)?;
-        let raw_out = numerator / denominator;
+        let num = U256::from(amount_in_with_fee) * U256::from(reserve_out);
+        let den = U256::from(reserve_in) * U256::from(FEE_DENOM) + U256::from(amount_in_with_fee);
+        let raw_out = if den.is_zero() {
+            return Err(UniswapV2PairError::Overflow);
+        } else {
+            let q = num / den;
+            if q > U256::from(u128::MAX) {
+                return Err(UniswapV2PairError::Overflow);
+            }
+            q.to::<u128>()
+        };
         let token_out = self.other_token_for(&amount_in.token)?;
         Ok(TokenAmount::new(raw_out, token_out))
     }
 
     pub fn get_amount_in(&self, amount_out: &TokenAmount) -> Result<TokenAmount, UniswapV2PairError> {
         let (reserve_in, reserve_out) = self.reserves_for_token_out(&amount_out.token)?;
-        let numerator = amount_out.raw
-            .checked_mul(reserve_in)
-            .and_then(|n| n.checked_mul(FEE_DENOM))
+        let amount_out_raw = amount_out.raw;
+        let reserve_out_sub_out = reserve_out
+            .checked_sub(amount_out_raw)
             .ok_or(UniswapV2PairError::Overflow)?;
-        let denominator = reserve_out
-            .checked_sub(amount_out.raw)
-            .ok_or(UniswapV2PairError::Overflow)?
-            .checked_mul(FEE_DENOM - self.fee_bps as u128)
-            .ok_or(UniswapV2PairError::Overflow)?;
-        if denominator == 0 {
+        let num = U256::from(amount_out_raw) * U256::from(reserve_in) * U256::from(FEE_DENOM);
+        let den = U256::from(reserve_out_sub_out) * U256::from(FEE_DENOM - self.fee_bps as u128);
+        if den.is_zero() {
             return Err(UniswapV2PairError::Overflow);
         }
-        let raw_in = (numerator + denominator - 1) / denominator;
+        let raw_in = {
+            let q = (num + den - U256::from(1)) / den;
+            if q > U256::from(u128::MAX) {
+                return Err(UniswapV2PairError::Overflow);
+            }
+            q.to::<u128>()
+        };
         let token_in = self.other_token_for(&amount_out.token)?;
         Ok(TokenAmount::new(raw_in, token_in))
     }
@@ -159,9 +168,7 @@ impl UniswapV2Pair {
     }
 
     pub fn from_chain(address: Address, client: &ChainClient) -> Result<Self, UniswapV2PairError> {
-        let chain_id = client.get_chain_id()?;
-
-        let reserves = call_pair(client, &address, &selector("getReserves()"), chain_id)?;
+        let reserves = call_pair(client, &address, &selector("getReserves()"))?;
         if reserves.len() < 96 {
             return Err(UniswapV2PairError::InvalidResponse(
                 "getReserves returned fewer than 96 bytes".to_string(),
@@ -170,8 +177,8 @@ impl UniswapV2Pair {
         let reserve0 = u128::from_be_bytes(array_from(&reserves[16..32]));
         let reserve1 = u128::from_be_bytes(array_from(&reserves[48..64]));
 
-        let token0_bytes = call_pair(client, &address, &selector("token0()"), chain_id)?;
-        let token1_bytes = call_pair(client, &address, &selector("token1()"), chain_id)?;
+        let token0_bytes = call_pair(client, &address, &selector("token0()"))?;
+        let token1_bytes = call_pair(client, &address, &selector("token1()"))?;
         if token0_bytes.len() < 32 || token1_bytes.len() < 32 {
             return Err(UniswapV2PairError::InvalidResponse(
                 "token0/token1 returned fewer than 32 bytes".to_string(),
@@ -187,10 +194,13 @@ impl UniswapV2Pair {
             UniswapV2PairError::InvalidResponse(format!("Invalid token1 address: {}", e))
         })?;
 
+        let token0 = fetch_token(client, &token0_addr)?;
+        let token1 = fetch_token(client, &token1_addr)?;
+
         Ok(Self::new(
             address,
-            TokenInPair::new(Token::new(18, None), token0_addr),
-            TokenInPair::new(Token::new(18, None), token1_addr),
+            TokenInPair::new(token0, token0_addr),
+            TokenInPair::new(token1, token1_addr),
             reserve0,
             reserve1,
             30,
@@ -248,11 +258,11 @@ fn address_from_slice(slice: &[u8]) -> String {
     format!("0x{}", hex::encode(slice))
 }
 
+/// eth_call; chain_id is not used for read-only calls (RPC node knows the chain).
 fn call_pair(
     client: &ChainClient,
     to: &Address,
     data: &[u8; 4],
-    chain_id: u64,
 ) -> Result<Vec<u8>, UniswapV2PairError> {
     let tx = Transaction {
         to: to.clone(),
@@ -262,7 +272,59 @@ fn call_pair(
         gas_limit: None,
         max_fee_per_gas: None,
         max_priority_fee: None,
-        chain_id,
+        chain_id: 0,
     };
     Ok(client.call(&tx, "latest")?)
+}
+
+fn fetch_token(
+    client: &ChainClient,
+    token_addr: &Address,
+) -> Result<Token, UniswapV2PairError> {
+    let dec_bytes = call_pair(client, token_addr, &selector("decimals()"))?;
+    let decimals = if dec_bytes.len() >= 32 {
+        dec_bytes[31]
+    } else {
+        return Err(UniswapV2PairError::InvalidResponse(
+            "decimals() returned fewer than 32 bytes".to_string(),
+        ));
+    };
+    let sym_bytes = call_pair(client, token_addr, &selector("symbol()")).map_err(|e| {
+        UniswapV2PairError::TokenMetadataUnavailable(format!("symbol() call failed: {}", e))
+    })?;
+    let symbol = parse_abi_string(&sym_bytes).filter(|s| !s.is_empty()).ok_or_else(|| {
+        UniswapV2PairError::TokenMetadataUnavailable(
+            "symbol() returned missing or empty string".to_string(),
+        )
+    })?;
+    Ok(Token::new(decimals, Some(symbol)))
+}
+
+fn parse_abi_string(data: &[u8]) -> Option<String> {
+    if data.len() < 32 {
+        return None;
+    }
+    if data.len() == 32 {
+        let s = std::str::from_utf8(data).ok()?.trim_end_matches('\0');
+        return if s.is_empty() { None } else { Some(s.to_string()) };
+    }
+    let offset = read_u32_be(&data[0..32])? as usize;
+    if data.len() < offset + 32 {
+        return None;
+    }
+    let len = read_u32_be(&data[offset..offset + 32])? as usize;
+    if data.len() < offset + 32 + len {
+        return None;
+    }
+    let raw = &data[offset + 32..offset + 32 + len];
+    std::str::from_utf8(raw).ok().map(|s| s.to_string())
+}
+
+fn read_u32_be(word: &[u8]) -> Option<u32> {
+    if word.len() < 32 {
+        return None;
+    }
+    let mut a = [0u8; 4];
+    a.copy_from_slice(&word[28..32]);
+    Some(u32::from_be_bytes(a))
 }
