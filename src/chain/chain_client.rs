@@ -49,11 +49,10 @@ impl ChainClient {
     pub fn get_chain_id(&self) -> Result<u64, ChainClientError> {
         let mut last_error = None;
         for rpc_url in &self.rpc_urls {
-            match self.try_get_chain_id_from_url(rpc_url) {
-                Ok(chain_id) => return Ok(chain_id),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_get_chain_id_from_url(rpc_url) {
+                    Ok(chain_id) => return Ok(chain_id),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }
@@ -76,11 +75,10 @@ impl ChainClient {
         let mut last_error = None;
 
         for rpc_url in &self.rpc_urls {
-            match self.try_get_balance_from_url(rpc_url, alloy_address) {
-                Ok(balance) => return Ok(balance),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_get_balance_from_url(rpc_url, alloy_address) {
+                    Ok(balance) => return Ok(balance),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }
@@ -110,11 +108,10 @@ impl ChainClient {
         let mut last_error = None;
 
         for rpc_url in &self.rpc_urls {
-            match self.try_get_nonce_from_url(rpc_url, alloy_address, block_id) {
-                Ok(nonce) => return Ok(nonce),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_get_nonce_from_url(rpc_url, alloy_address, block_id) {
+                    Ok(nonce) => return Ok(nonce),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }
@@ -143,11 +140,10 @@ impl ChainClient {
         let mut last_error = None;
 
         for rpc_url in &self.rpc_urls {
-            match self.try_get_gas_price_from_url(rpc_url) {
-                Ok(gas_price) => return Ok(gas_price),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_get_gas_price_from_url(rpc_url) {
+                    Ok(gas_price) => return Ok(gas_price),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }
@@ -210,11 +206,10 @@ impl ChainClient {
         let mut last_error = None;
 
         for rpc_url in &self.rpc_urls {
-            match self.try_estimate_gas_from_url(rpc_url, &tx_request) {
-                Ok(gas_estimate) => return Ok(gas_estimate),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_estimate_gas_from_url(rpc_url, &tx_request) {
+                    Ok(gas_estimate) => return Ok(gas_estimate),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }
@@ -238,11 +233,10 @@ impl ChainClient {
     pub fn send_transaction(&self, signed_tx: &SignedTransaction) -> Result<String, ChainClientError> {
         let mut last_error = None;
         for rpc_url in &self.rpc_urls {
-            match self.try_send_raw_transaction_from_url(rpc_url, signed_tx.raw()) {
-                Ok(tx_hash) => return Ok(tx_hash),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_send_raw_transaction_from_url(rpc_url, signed_tx.raw()) {
+                    Ok(tx_hash) => return Ok(tx_hash),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }
@@ -287,12 +281,11 @@ impl ChainClient {
         let mut last_error = None;
 
         for rpc_url in &self.rpc_urls {
-            match self.try_get_transaction_from_url(rpc_url, hash) {
-                Ok(Some(tx)) => return Ok(tx),
-                Ok(None) => return Err(ChainClientError::TransactionNotFound(tx_hash.to_string())),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_get_transaction_from_url(rpc_url, hash) {
+                    Ok(Some(tx)) => return Ok(tx),
+                    Ok(None) => return Err(ChainClientError::TransactionNotFound(tx_hash.to_string())),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }
@@ -328,11 +321,10 @@ impl ChainClient {
         let mut last_error = None;
 
         for rpc_url in &self.rpc_urls {
-            match self.try_get_receipt_from_url(rpc_url, hash) {
-                Ok(receipt) => return Ok(receipt),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_get_receipt_from_url(rpc_url, hash) {
+                    Ok(receipt) => return Ok(receipt),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }
@@ -354,11 +346,10 @@ impl ChainClient {
         let tx_request = tx.to_transaction_request();
         let mut last_error = None;
         for rpc_url in &self.rpc_urls {
-            match self.try_call_from_url(rpc_url, &tx_request, block_id) {
-                Ok(data) => return Ok(data),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_call_from_url(rpc_url, &tx_request, block_id) {
+                    Ok(data) => return Ok(data),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }
@@ -388,11 +379,10 @@ impl ChainClient {
         let block_id = parse_block_id(block)?;
         let mut last_error = None;
         for rpc_url in &self.rpc_urls {
-            match self.try_get_block_from_url(rpc_url, block_id) {
-                Ok(block_meta) => return Ok(block_meta),
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
+            for _ in 0..=self.max_retries {
+                match self.try_get_block_from_url(rpc_url, block_id) {
+                    Ok(block_meta) => return Ok(block_meta),
+                    Err(e) => last_error = Some(e),
                 }
             }
         }

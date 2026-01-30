@@ -177,55 +177,14 @@ impl SignatureHasher for Eip712Hasher {
     }
 }
 
-/// EIP-155; `v = chain_id*2+35+recovery_id`.
+/// EIP-1559; hash must match Alloy/node (0x02 || RLP then Keccak256).
 pub struct TransactionHasher;
-
-impl TransactionHasher {
-    fn serialize_transaction(tx: &Transaction) -> Result<Vec<u8>, SignatureAlgorithmError> {
-        tx.to.validate()
-            .map_err(|e| SignatureAlgorithmError::HashError(e.to_string()))?;
-        let mut bytes = Vec::new();
-
-        let nonce = tx.nonce.unwrap_or(0);
-        bytes.extend_from_slice(&nonce.to_be_bytes());
-
-        let max_fee_per_gas = tx.max_fee_per_gas.unwrap_or(0);
-        bytes.extend_from_slice(&max_fee_per_gas.to_be_bytes());
-
-        let max_priority_fee = tx.max_priority_fee.unwrap_or(0);
-        bytes.extend_from_slice(&max_priority_fee.to_be_bytes());
-
-        let gas_limit = tx.gas_limit.unwrap_or(0);
-        bytes.extend_from_slice(&gas_limit.to_be_bytes());
-
-        let addr_str = tx.to.value.strip_prefix("0x").unwrap_or(&tx.to.value);
-        
-        let addr_bytes = hex::decode(addr_str)
-            .map_err(|e| SignatureAlgorithmError::HashError(
-                format!("Failed to decode validated address: {}", e)
-            ))?;
-
-        bytes.extend_from_slice(&addr_bytes);
-        bytes.extend_from_slice(&tx.value.raw.to_be_bytes());
-        bytes.extend_from_slice(&(tx.data.len() as u32).to_be_bytes());
-        bytes.extend_from_slice(&tx.data);
-        bytes.extend_from_slice(&tx.chain_id.to_be_bytes());
-        Ok(bytes)
-    }
-}
 
 impl SignatureHasher for TransactionHasher {
     type Data = Transaction;
-    
-    fn compute_hash(&self, tx: &Transaction) -> Result<[u8; 32], SignatureAlgorithmError> {
-        let tx_bytes = Self::serialize_transaction(tx)?;
-        let mut hasher = Keccak256::new();
-        hasher.update(&tx_bytes);
 
-        let hash = hasher.finalize();
-        let mut hash_array = [0u8; 32];
-        hash_array.copy_from_slice(&hash);
-        Ok(hash_array)
+    fn compute_hash(&self, tx: &Transaction) -> Result<[u8; 32], SignatureAlgorithmError> {
+        Ok(tx.eip1559_signature_hash())
     }
 
     fn sign(&self, signing_key: &SigningKey, tx: &Transaction) -> Result<Signature, SignatureAlgorithmError> {

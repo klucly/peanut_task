@@ -43,6 +43,9 @@ price-impact *ARGS:
 # Usage: just analyzer <TX_HASH> [--rpc URL]
 analyzer *ARGS:
     cargo run --bin chain_analyzer -- {{ARGS}}
+    
+integration-test *ARGS:
+    cargo run --bin integration_test -- {{ARGS}}
 
 # ────────────────────────────────────────────────
 # Longer / heavier commands

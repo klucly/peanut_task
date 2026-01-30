@@ -19,6 +19,7 @@ Core is organized into modules: `address`, `utility`, `signatures`, `token`, `to
 - `Message`
 - `TypedData::new`
 - `Transaction` — `from: Option<Address>` (parsed from RPC when present), `to`, `value`, `data`, gas fields, `chain_id`
+- `Transaction::to_eip1559` (internal), `eip1559_signature_hash` — EIP-1559 signing hash uses Alloy’s encoding (0x02 || RLP) so node recovers correct sender
 - `Transaction::to_transaction_request`, `to_dict`, `from_web3`
 - `SignedTransaction::new` (RLP-encodes EIP-1559), `from_raw`, `hex`, `raw`
 
@@ -46,7 +47,7 @@ Core is organized into modules: `address`, `utility`, `signatures`, `token`, `to
 - `DeterministicSerializer::serialize` (canonical JSON), `hash`, `verify_determinism`
 
 ### signature_algorithms
-- `Eip191Hasher`, `Eip712Hasher`, `TransactionHasher` (EIP-155)
+- `Eip191Hasher`, `Eip712Hasher`, `TransactionHasher` (EIP-1559; uses `Transaction::eip1559_signature_hash` so signature matches node recovery)
 - `sign_with_algorithm`, `verify_and_recover_with_algorithm`, `recover_signer_with_algorithm`, `compute_hash_with_algorithm`
 - `derive_public_key_from_private_key`, `derive_address_from_public_key`
 
@@ -99,6 +100,9 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 - Requires `INFURA_API_KEY`, `RPC_URL`, or `--rpc`. Fetches tx and receipt via `ChainClient::get_transaction` / `get_receipt`; block timestamp via `ChainClient::get_block`; for token transfers parses `Transfer(address,address,uint256)` logs and fetches token `decimals()` / `symbol()` via `eth_call`.
 - Output: Transaction Analysis (hash, block, timestamp UTC, status, from/to/value), Gas Analysis (limit, used, base/priority/effective fee, tx fee), Function Called (selector and known name, ABI-decoded args for swapExactTokensForTokens-style calldata), Token Transfers (from/to/amount with symbol), Swap Summary when exactly two transfers (sold/received, execution price). From comes from `Transaction::from` (parsed from RPC); timestamp from `get_block`.
 
+### integration_test (binary, `scripts/integration_test.rs`)
+- Integration test: loads wallet from env, fetches balance, builds a simple transfer (to fixed Sepolia address, 0.0001 ETH), prints build details (to, value, gas, max fee, max priority), signs, sends, waits for receipt, then prints block, status, gas used, fee. Output format: Wallet, Balance, Building transaction…, Signing… (signature valid / recovered address), Sending… (TX hash), Waiting for confirmation… (block, status, gas used %, fee), then "Integration test PASSED". Run: `just integration-test`. Requires `SECRET_KEY` and `INFURA_API_KEY` in env. Uses Sepolia Infura URL.
+
 ## Chain
 
 ### url_wrapper
@@ -122,7 +126,7 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 - `try_get_receipt_from_url_async`
 
 ### chain_client
-- `ChainClient::new` (requires non-empty `rpc_urls`, creates Tokio runtime; tries URLs in order on failure)
+- `ChainClient::new(rpc_urls, timeout, max_retries)` — requires non-empty `rpc_urls`, creates Tokio runtime. For each RPC call: tries each URL in order; per URL, retries up to `max_retries` times (1 initial attempt + retries) before moving to the next URL. `timeout` is stored for future use (e.g. request timeouts).
 - `get_chain_id`, `get_balance`, `get_nonce` (accepts `"latest"`, `"pending"`, `"earliest"`, or block number), `get_gas_price`, `estimate_gas`
 - `get_block(block)` — fetches block metadata by block id; returns `Block { number, timestamp }` (Unix timestamp)
 - `send_transaction` (`eth_sendRawTransaction`), `wait_for_receipt` (polls until found or timeout)
@@ -140,4 +144,4 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 
 ## Build
 
-`just test`, `just lint`, `just build`, `just run`, `just doc`. Price impact CLI: `just price-impact <PAIR> --token-in USDC --sizes 1000,10000,...`. Transaction analyzer: `just analyzer <TX_HASH> [--rpc URL]`.
+`just test`, `just lint`, `just build`, `just run`, `just doc`. Price impact CLI: `just price-impact <PAIR> --token-in USDC --sizes 1000,10000,...`. Transaction analyzer: `just analyzer <TX_HASH> [--rpc URL]`. Integration test: `just integration-test` (requires `SECRET_KEY`, `INFURA_API_KEY`).

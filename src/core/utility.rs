@@ -60,6 +60,29 @@ impl Default for Transaction {
 }
 
 impl Transaction {
+    /// Builds Alloy EIP-1559 tx (same encoding as signed payload) for hashing/signing.
+    fn to_eip1559(&self) -> TxEip1559 {
+        TxEip1559 {
+            chain_id: self.chain_id,
+            nonce: self.nonce.unwrap_or(0),
+            gas_limit: self.gas_limit.unwrap_or(0),
+            max_fee_per_gas: self.max_fee_per_gas.unwrap_or(0) as u128,
+            max_priority_fee_per_gas: self.max_priority_fee.unwrap_or(0) as u128,
+            to: TxKind::Call(self.to.alloy_address()),
+            value: U256::from(self.value.raw),
+            access_list: Default::default(),
+            input: Bytes::from(self.data.clone()),
+        }
+    }
+
+    /// EIP-1559 signing hash: Keccak256(0x02 || RLP(...)). Must match node recovery.
+    pub fn eip1559_signature_hash(&self) -> [u8; 32] {
+        let hash = self.to_eip1559().signature_hash();
+        let mut out = [0u8; 32];
+        out.copy_from_slice(hash.as_slice());
+        out
+    }
+
     /// Builds an alloy `TransactionRequest` for `eth_call`, `eth_estimateGas`, `eth_sendTransaction`.
     pub fn to_transaction_request(&self) -> TransactionRequest {
         let mut req = TransactionRequest::default()
@@ -273,17 +296,7 @@ impl SignedTransaction {
         } else {
             ((sig.v as u64).saturating_sub(35)) % 2 == 1
         };
-        let tx_eip = TxEip1559 {
-            chain_id: tx.chain_id,
-            nonce: tx.nonce.unwrap_or(0),
-            gas_limit: tx.gas_limit.unwrap_or(0),
-            max_fee_per_gas: tx.max_fee_per_gas.unwrap_or(0) as u128,
-            max_priority_fee_per_gas: tx.max_priority_fee.unwrap_or(0) as u128,
-            to: TxKind::Call(tx.to.alloy_address()),
-            value: U256::from(tx.value.raw),
-            access_list: Default::default(),
-            input: Bytes::from(tx.data.clone()),
-        };
+        let tx_eip = tx.to_eip1559();
         let alloy_sig = AlloySignature::from_scalars_and_parity(
             B256::from_slice(&sig.r),
             B256::from_slice(&sig.s),
