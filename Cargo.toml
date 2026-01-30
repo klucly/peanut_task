@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-alloy = { version = "1", features = ["provider-http"] }
+alloy = { version = "1", features = ["consensus", "provider-http"] }
 rust_decimal = "1"
 url = "2.5"
 dotenvy = "0.15.7"
@@ -17,6 +17,7 @@ serde_json = "1.0"
 sha2 = "0.10.8"
 sha3 = "0.10.8"
 thiserror = "2.0.18"
+time = { version = "0.3", features = ["formatting"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 [dev-dependencies]
@@ -32,3 +33,7 @@ path = "src/main.rs"
 [[bin]]
 name = "price_impact_cli"
 path = "scripts/price_impact_cli.rs"
+
+[[bin]]
+name = "chain_analyzer"
+path = "scripts/transaction_analyzer_cli.rs"

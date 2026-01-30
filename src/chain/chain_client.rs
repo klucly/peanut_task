@@ -1,11 +1,26 @@
 use crate::core::base_types::{
     Address, SignedTransaction, TokenAmount, Transaction, TransactionReceipt,
 };
+use alloy::consensus::BlockHeader;
+use alloy::network::BlockResponse;
 use alloy::primitives::{Address as AlloyAddress, B256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{BlockId, BlockNumberOrTag, TransactionRequest};
 use tokio::runtime::Runtime;
-use crate::chain::{RpcUrl, errors::{ChainClientError, ChainClientCreationError}, gas_price::GasPrice, parsers::{parse_tx_hash, parse_block_id}, receipt_polling::poll_for_receipt};
+use crate::chain::{
+    errors::{ChainClientCreationError, ChainClientError},
+    gas_price::GasPrice,
+    parsers::{parse_block_id, parse_tx_hash},
+    receipt_polling::poll_for_receipt,
+    RpcUrl,
+};
+
+/// Block metadata: number and Unix timestamp.
+#[derive(Debug, Clone)]
+pub struct Block {
+    pub number: u64,
+    pub timestamp: u64,
+}
 
 pub struct ChainClient {
     rpc_urls: Vec<RpcUrl>,
@@ -365,6 +380,44 @@ impl ChainClient {
                 .await
                 .map_err(|e| ChainClientError::RpcError(format!("eth_call failed: {}", e)))?;
             Ok(result.to_vec())
+        })
+    }
+
+    /// Fetches block metadata by block id. `block`: `"latest"` | `"pending"` | `"earliest"` or block number.
+    pub fn get_block(&self, block: &str) -> Result<Block, ChainClientError> {
+        let block_id = parse_block_id(block)?;
+        let mut last_error = None;
+        for rpc_url in &self.rpc_urls {
+            match self.try_get_block_from_url(rpc_url, block_id) {
+                Ok(block_meta) => return Ok(block_meta),
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
+        Err(ChainClientError::all_endpoints_failed(last_error))
+    }
+
+    fn try_get_block_from_url(
+        &self,
+        rpc_url: &RpcUrl,
+        block_id: BlockId,
+    ) -> Result<Block, ChainClientError> {
+        self.runtime.block_on(async {
+            let parsed_url = rpc_url.as_url().clone();
+            let provider = ProviderBuilder::new().connect_http(parsed_url);
+            let block_opt = provider
+                .get_block(block_id)
+                .await
+                .map_err(|e| ChainClientError::RpcError(format!("get_block failed: {}", e)))?;
+            let block = block_opt.ok_or_else(|| {
+                ChainClientError::InvalidResponse("Block not found".to_string())
+            })?;
+            Ok(Block {
+                number: block.header().number(),
+                timestamp: block.header().timestamp(),
+            })
         })
     }
 }

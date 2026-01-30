@@ -70,6 +70,7 @@ fn main() {
     );
 
     let mut tx = core::base_types::Transaction {
+        from: None,
         to: to_address.clone(),
         value: core::base_types::TokenAmount::native_eth(1_000_000_000_000_000u128),
         data: vec![],
@@ -84,6 +85,7 @@ fn main() {
     println!("Gas estimate: {} units", gas_estimate);
     
     let simple_call_tx = core::base_types::Transaction {
+        from: None,
         to: address.clone(),
         value: core::base_types::TokenAmount::native_eth(0),
         data: vec![],

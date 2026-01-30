@@ -18,6 +18,7 @@ Core is organized into modules: `address`, `utility`, `signatures`, `token`, `to
 - Re-exports `Address`, `AddressError` from the address module (does not define them).
 - `Message`
 - `TypedData::new`
+- `Transaction` — `from: Option<Address>` (parsed from RPC when present), `to`, `value`, `data`, gas fields, `chain_id`
 - `Transaction::to_transaction_request`, `to_dict`, `from_web3`
 - `SignedTransaction::new` (RLP-encodes EIP-1559), `from_raw`, `hex`, `raw`
 
@@ -93,6 +94,11 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 - Requires `INFURA_API_KEY` or `RPC_URL`. Loads pair from chain; token decimals and symbols are fetched from each token contract (ERC-20 `decimals()` / `symbol()`).
 - Output: one-line header (X → Y, pool), reserves, spot price, then one line per size (in → out, exec price, impact %), then max trade for 1% impact.
 
+### transaction_analyzer_cli (binary, `scripts/transaction_analyzer_cli.rs`)
+- CLI to analyze a transaction. Usage: `chain_analyzer <TX_HASH> [--rpc URL]` (or `just analyzer <TX_HASH> [--rpc URL]`).
+- Requires `INFURA_API_KEY`, `RPC_URL`, or `--rpc`. Fetches tx and receipt via `ChainClient::get_transaction` / `get_receipt`; block timestamp via `ChainClient::get_block`; for token transfers parses `Transfer(address,address,uint256)` logs and fetches token `decimals()` / `symbol()` via `eth_call`.
+- Output: Transaction Analysis (hash, block, timestamp UTC, status, from/to/value), Gas Analysis (limit, used, base/priority/effective fee, tx fee), Function Called (selector and known name, ABI-decoded args for swapExactTokensForTokens-style calldata), Token Transfers (from/to/amount with symbol), Swap Summary when exactly two transfers (sold/received, execution price). From comes from `Transaction::from` (parsed from RPC); timestamp from `get_block`.
+
 ## Chain
 
 ### url_wrapper
@@ -118,8 +124,10 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 ### chain_client
 - `ChainClient::new` (requires non-empty `rpc_urls`, creates Tokio runtime; tries URLs in order on failure)
 - `get_chain_id`, `get_balance`, `get_nonce` (accepts `"latest"`, `"pending"`, `"earliest"`, or block number), `get_gas_price`, `estimate_gas`
+- `get_block(block)` — fetches block metadata by block id; returns `Block { number, timestamp }` (Unix timestamp)
 - `send_transaction` (`eth_sendRawTransaction`), `wait_for_receipt` (polls until found or timeout)
 - `get_transaction` (returns `TransactionNotFound` if not found), `get_receipt`, `call` (`eth_call`)
+- **Block** — `number: u64`, `timestamp: u64` (Unix seconds)
 - Tests in `tests/chain_client_tests.rs`: multi-URL fallback (first URL unreachable, second stub succeeds), `AllEndpointsFailed` for send_transaction/get_chain_id/get_balance, error classification (`AllEndpointsFailed` for HTTP 500, `InvalidResponse` via invalid block in get_nonce, `TransactionNotFound` via stub null tx, `TimeoutError` via wait_for_receipt with stub that never returns receipt). Uses `httpmock` (dev-dependency) for local JSON-RPC stubs; no second RPC/API key required.
 
 ### transaction_builder
@@ -132,4 +140,4 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 
 ## Build
 
-`just test`, `just lint`, `just build`, `just run`, `just doc`. Price impact CLI: `just price-impact <PAIR> --token-in USDC --sizes 1000,10000,...`.
+`just test`, `just lint`, `just build`, `just run`, `just doc`. Price impact CLI: `just price-impact <PAIR> --token-in USDC --sizes 1000,10000,...`. Transaction analyzer: `just analyzer <TX_HASH> [--rpc URL]`.

@@ -265,6 +265,7 @@ fn call_pair(
     data: &[u8; 4],
 ) -> Result<Vec<u8>, UniswapV2PairError> {
     let tx = Transaction {
+        from: None,
         to: to.clone(),
         value: TokenAmount::native_eth(0),
         data: data.to_vec(),

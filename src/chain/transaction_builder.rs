@@ -109,6 +109,7 @@ impl<'a> TransactionBuilder<'a> {
             .clone()
             .unwrap_or_else(|| TokenAmount::native_eth(0));
         Ok(Transaction {
+            from: None,
             to,
             value,
             data: self.data.clone(),
@@ -168,6 +169,7 @@ impl<'a> TransactionBuilder<'a> {
             TokenAmount::native_eth(0)
         });
         Ok(Transaction {
+            from: None,
             to,
             value,
             data: self.data.clone(),

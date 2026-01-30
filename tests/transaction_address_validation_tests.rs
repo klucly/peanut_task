@@ -9,6 +9,7 @@ fn test_valid_address_passes_validation() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap(),
         value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
@@ -30,6 +31,7 @@ fn test_none_address_passes_validation() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x0000000000000000000000000000000000000000").unwrap(),
         value: TokenAmount::native_eth(0),
         data: vec![0x60, 0x60, 0x60],
@@ -51,6 +53,7 @@ fn test_address_missing_0x_prefix_fails() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap_or_else(|_| {
             Address { value: "742d35Cc6634C0532925a3b844Bc9e7595f0bEb0".to_string() }
         }),
@@ -81,6 +84,7 @@ fn test_address_too_short_fails() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb").unwrap_or_else(|_| {
             Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb".to_string() }
         }), // 41 chars (too short)
@@ -111,6 +115,7 @@ fn test_address_too_long_fails() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb00").unwrap_or_else(|_| {
             Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb00".to_string() }
         }), // 43 chars (too long)
@@ -141,6 +146,7 @@ fn test_address_with_invalid_hex_characters_fails() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbG").unwrap_or_else(|_| {
             Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbG".to_string() }
         }), // Invalid 'G' character
@@ -171,6 +177,7 @@ fn test_address_with_special_characters_fails() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb@").unwrap_or_else(|_| {
             Address { value: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb@".to_string() }
         }), // Invalid '@' character
@@ -194,6 +201,7 @@ fn test_address_with_uppercase_and_lowercase_hex_passes() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap(), // Mixed case is valid
         value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
@@ -215,6 +223,7 @@ fn test_address_all_lowercase_passes() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x742d35cc6634c0532925a3b844bc9e7595f0beb0").unwrap(), // All lowercase
         value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
@@ -236,6 +245,7 @@ fn test_address_all_uppercase_passes() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x742D35CC6634C0532925A3B844BC9E7595F0BEB0").unwrap(), // All uppercase
         value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],
@@ -257,6 +267,7 @@ fn test_empty_address_fails() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("").unwrap_or_else(|_| {
             Address { value: "".to_string() }
         }), // Empty string
@@ -280,6 +291,7 @@ fn test_address_with_only_0x_prefix_fails() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0x").unwrap_or_else(|_| {
             Address { value: "0x".to_string() }
         }), // Only prefix, no hex
@@ -303,6 +315,7 @@ fn test_well_known_address_passes() {
     ).unwrap();
 
     let tx = Transaction {
+        from: None,
         to: Address::from_string("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266").unwrap(), // Hardhat/Anvil test address
         value: TokenAmount::native_eth(1000000000000000000),
         data: vec![],

@@ -39,6 +39,11 @@ run *ARGS:
 price-impact *ARGS:
     cargo run --bin price_impact_cli -- {{ARGS}}
 
+# Transaction analyzer CLI: tx hash, optional --rpc URL.
+# Usage: just analyzer <TX_HASH> [--rpc URL]
+analyzer *ARGS:
+    cargo run --bin chain_analyzer -- {{ARGS}}
+
 # ────────────────────────────────────────────────
 # Longer / heavier commands
 # ────────────────────────────────────────────────

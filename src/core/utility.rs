@@ -32,6 +32,7 @@ impl TypedData {
 
 #[derive(Debug, Clone)]
 pub struct Transaction {
+    pub from: Option<Address>,
     pub to: Address,
     pub value: TokenAmount,
     pub data: Vec<u8>,
@@ -45,6 +46,7 @@ pub struct Transaction {
 impl Default for Transaction {
     fn default() -> Self {
         Self {
+            from: None,
             to: Address::zero(),
             value: TokenAmount::native_eth(0),
             data: vec![],
@@ -114,6 +116,13 @@ impl Transaction {
         let obj = tx.as_object()
             .ok_or_else(|| TransactionParseError::InvalidFormat("Transaction must be a JSON object".to_string()))?;
 
+        let from = obj
+            .get("from")
+            .and_then(|v| v.as_str())
+            .map(|s| Address::from_string(s))
+            .transpose()
+            .map_err(|e| TransactionParseError::InvalidFormat(format!("Invalid 'from' address: {}", e)))?;
+
         let to_str = obj.get("to")
             .and_then(|v| v.as_str())
             .ok_or_else(|| TransactionParseError::MissingField("to".to_string()))?;
@@ -156,6 +165,7 @@ impl Transaction {
             .transpose()?;
 
         Ok(Transaction {
+            from,
             to,
             value,
             data,
@@ -263,7 +273,6 @@ impl SignedTransaction {
         } else {
             ((sig.v as u64).saturating_sub(35)) % 2 == 1
         };
-
         let tx_eip = TxEip1559 {
             chain_id: tx.chain_id,
             nonce: tx.nonce.unwrap_or(0),
