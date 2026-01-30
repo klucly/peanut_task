@@ -135,6 +135,7 @@ impl WalletManager {
             .map_err(|e| format!("Signature verification failed: {}", e))
     }
     pub fn sign_transaction(&self, tx: Transaction) -> Result<SignedTransaction, TransactionError> {
+        tx.to.validate().map_err(|e| TransactionError::InvalidAddress(e.to_string()))?;
         let signature = TransactionHasher.sign(self.get_signing_key(), &tx)
             .map_err(|e| TransactionError::InvalidAddress(format!("Failed to sign transaction: {}", e)))?;
         Ok(SignedTransaction::new(&tx, &signature))

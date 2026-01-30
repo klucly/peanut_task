@@ -92,3 +92,54 @@ fn test_build_and_sign_fails_without_gas_price_or_rpc() {
         err
     );
 }
+
+#[test]
+fn test_with_gas_estimate_requires_to() {
+    let client = make_client();
+    let wallet = make_wallet();
+    let builder = TransactionBuilder::new(&client, &wallet);
+    let res = builder.with_gas_estimate(1.2);
+    let err = match res {
+        Ok(_) => panic!("with_gas_estimate without to should fail"),
+        Err(e) => e,
+    };
+    assert!(matches!(err, TransactionBuilderError::MissingField(_)));
+    assert!(
+        err.to_string().contains("to") && err.to_string().to_lowercase().contains("gas"),
+        "error should mention to and gas estimate: {}",
+        err
+    );
+}
+
+#[test]
+fn test_with_gas_estimate_fails_when_rpc_unreachable() {
+    let client = make_client();
+    let wallet = make_wallet();
+    let to = Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap();
+    let builder = TransactionBuilder::new(&client, &wallet).to(to);
+    let res = builder.with_gas_estimate(1.0);
+    let err = match res {
+        Ok(_) => panic!("with_gas_estimate should fail when RPC unreachable"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(err, TransactionBuilderError::Chain(_)),
+        "with_gas_estimate should fail with Chain when RPC unreachable: {}",
+        err
+    );
+}
+
+#[test]
+fn test_build_and_sign_fails_without_gas_limit_or_gas_price() {
+    let client = make_client();
+    let wallet = make_wallet();
+    let to = Address::from_string("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0").unwrap();
+    let builder = TransactionBuilder::new(&client, &wallet).to(to);
+    let res = builder.build_and_sign();
+    let err = res.unwrap_err();
+    assert!(
+        matches!(err, TransactionBuilderError::Chain(_) | TransactionBuilderError::MissingField(_)),
+        "build_and_sign without gas_limit or gas_price must fail: {}",
+        err
+    );
+}

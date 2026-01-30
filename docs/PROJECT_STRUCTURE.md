@@ -54,6 +54,7 @@ Core is organized into modules: `address`, `utility`, `signatures`, `token`, `to
 ### wallet_manager
 - `WalletManager::from_hex_string`, `from_env`, `generate`, `address`, `public_key`
 - `sign_message` (EIP-191), `sign_typed_data` (EIP-712), `sign_transaction`
+- `sign_transaction` validates `tx.to` via `Address::validate()` before signing; invalid format returns `TransactionError::InvalidAddress`.
 - `Display` / `ToString`: show only `WalletManager(0x<address>)`; private key never printed (security).
 - `Debug`: shows only `address` (derived); key material never in logs or panic output.
 
@@ -88,7 +89,7 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 - **ImpactRow** — single row: amount_in, amount_out, spot_price, execution_price, price_impact_pct
 - **TrueCostResult** — gross_output, gas_cost_eth, gas_cost_in_output_token, net_output, effective_price
 - **PriceImpactAnalyzerError**: `Pair(UniswapV2PairError)`, `Overflow`
-- Tests in `tests/price_impact_analyzer_tests.rs`: empty sizes, table matches pair methods, token not in pair, zero reserve, max size respects impact, zero amount_in, net output deduction
+- Tests in `tests/price_impact_analyzer_tests.rs`: empty sizes; table matches pair methods; token not in pair; zero reserve; max size respects impact and boundary; zero amount_in; net output deduction; ImpactRow parsing/decoding (spot_price, execution_price, price_impact_pct match pair get_spot_price/get_execution_price/get_price_impact); estimate_true_cost gas overflow (huge gas_price_gwei × gas_estimate); estimate_true_cost net_output underflow when output is ETH and gas cost > gross_output; estimate_true_cost output ETH deducts gas (gas_cost_in_output_token == gas_cost_eth, net_output == gross_output - gas_cost_eth)
 
 ### price_impact_cli (binary, `scripts/price_impact_cli.rs`)
 - CLI for price impact analysis. Usage: `price_impact_cli <PAIR> --token-in USDC --sizes 1000,10000,...` (or `just price-impact ...`).
@@ -137,10 +138,11 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 ### transaction_builder
 - `TransactionBuilder::new(client, wallet)` — fluent builder for transactions
 - Fluent setters: `to`, `value`, `data`, `nonce`, `gas_limit`
-- `with_gas_estimate(buffer)` — estimate gas and set limit with buffer (e.g. 1.2 = 20% headroom)
+- `with_gas_estimate(buffer)` — estimate gas and set limit with buffer (e.g. 1.2 = 20% headroom); requires `to` (MissingField if omitted); delegates to `ChainClient::estimate_gas`
 - `with_gas_price(priority)` — set gas from network; `priority`: `Priority` enum (or `s.parse::<Priority>()` for strings)
 - Terminal: `build()` → `Transaction`; `build_and_sign()` → `SignedTransaction`; `send()` → tx hash; `send_and_wait(timeout)` → `TransactionReceipt`
 - `TransactionBuilderError`: `MissingField`, `Chain`, `Wallet`
+- Tests in `tests/transaction_builder_tests.rs`: build fails without `to`; `with_gas_estimate` requires `to` (MissingField); `with_gas_estimate` with `to` fails with Chain when RPC unreachable; build_and_sign without gas_limit or gas_price fails; fluent chaining; priority FromStr; with_gas_price accepts priority enum
 
 ## Build
 
