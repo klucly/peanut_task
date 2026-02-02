@@ -1,5 +1,5 @@
 /// Currency identity: decimals and optional symbol. No address in core.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Token {
     pub decimals: u8,
     pub symbol: Option<String>,
