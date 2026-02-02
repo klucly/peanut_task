@@ -56,18 +56,37 @@ just run
 
 ## Example Output
 
-Sample output from `just run`:
+Sample output from `just run` (price impact, best route, mempool monitoring):
 
 ```
-Balance: 276.231750797334378783
-Nonce - pending: 37248, latest: 37248, earliest: 0
-Gas - base: 0 gwei, max fees - low: 0 gwei, medium: 0 gwei, high: 1 gwei
-TransactionBuilder: built tx to 0x742D35CC6634c0532925A3b844BC9E7595F0BEb0, value 0.001, gas_limit Some(25200)
-Gas estimate: 21000 units
-Call result: 0 bytes
-Transaction: 0x388C818CA8B9251b393131C08a736A67ccB19297 -> 0.008653912357036746
-Receipt: block 24320264, status: success
-Send transaction (expected error): All RPC endpoints failed: RPC request failed: eth_sendRawTransaction failed: server returned an error response: error code -32602: Invalid parameters: transaction could not be decoded: unsupported transaction type
+═══════════════════════════════════════════════════════════════
+  PRICE IMPACT TABLE (USDC/WETH pool)
+═══════════════════════════════════════════════════════════════
+USDC -> WETH  |  Pool 0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc
+Reserves: 4156.136584991439381269 WETH / 9794685.605565 USDC
+
+┌── USDC In ──┬─ WETH Out ──┬ Exec Price ─┬─ Impact ─┐
+├─────────────┼─────────────┼─────────────┼──────────┤
+│    1000     │    0.423    │   2364.01   │  0.31%   │
+│    10000    │   4.2262    │   2366.17   │  0.40%   │
+│   100000    │   41.8789   │   2387.83   │  1.30%   │
+└─────────────┴─────────────┴─────────────┴──────────┘
+
+Max trade for 1% impact: 69463.743998 USDC
+
+═══════════════════════════════════════════════════════════════
+  BEST ROUTE (USDC -> WETH)
+═══════════════════════════════════════════════════════════════
+Best route: USDC -> WETH (1 hops)
+  Amount in: 10000 USDC
+  Net output: 4.22622511379652212 (after gas)
+
+═══════════════════════════════════════════════════════════════
+  MEMPOOL MONITORING
+═══════════════════════════════════════════════════════════════
+Mempool monitor started. Listening for swap txs
+(swapExactTokensForTokens, swapExactETHForTokens, swapExactTokensForETH)
+Send test swaps to see them here. Running for 60 seconds...
 ```
 
 ## Limitations & Assumptions
