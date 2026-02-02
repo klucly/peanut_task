@@ -1,8 +1,10 @@
+pub mod mempool_monitor;
 pub mod price_impact_analyzer;
 pub mod route;
 pub mod uniswap_v2_pair;
 
 pub use crate::core::base_types::Token;
+pub use mempool_monitor::{parse_transaction, MempoolMonitor, MempoolMonitorError, ParsedSwap};
 pub use price_impact_analyzer::{
     ImpactRow, PriceImpactAnalyzer, PriceImpactAnalyzerError, TrueCostResult,
 };
