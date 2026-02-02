@@ -109,6 +109,12 @@ impl PartialEq for Address {
 
 impl Eq for Address {}
 
+impl std::hash::Hash for Address {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.to_lowercase().hash(state);
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum AddressError {
     #[error("Address must start with '0x', got: {0}")]

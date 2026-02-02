@@ -207,6 +207,19 @@ impl UniswapV2Pair {
         ))
     }
 
+    /// Refresh reserve0 and reserve1 from chain via getReserves().
+    pub fn refresh_reserves(&mut self, client: &ChainClient) -> Result<(), UniswapV2PairError> {
+        let reserves = call_pair(client, &self.address, &selector("getReserves()"))?;
+        if reserves.len() < 96 {
+            return Err(UniswapV2PairError::InvalidResponse(
+                "getReserves returned fewer than 96 bytes".to_string(),
+            ));
+        }
+        self.reserve0 = u128::from_be_bytes(array_from(&reserves[16..32]));
+        self.reserve1 = u128::from_be_bytes(array_from(&reserves[48..64]));
+        Ok(())
+    }
+
     pub fn reserve_for_token(&self, token: &Token) -> Result<u128, UniswapV2PairError> {
         let (r, _) = self.reserves_for_token(token)?;
         Ok(r)

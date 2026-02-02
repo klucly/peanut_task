@@ -96,3 +96,71 @@ just clean        # cargo clean
 just nextest      # cargo nextest run (if you add nextest)
 ```
 
+## Pricing Module
+
+The pricing module integrates AMM math, routing, fork simulation, and mempool monitoring into a unified interface.
+
+```mermaid
+flowchart TB
+    subgraph PricingEngine
+        PE[PricingEngine]
+        pools[HashMap Address to UniswapV2Pair]
+        router[RouteFinder]
+    end
+    
+    subgraph Dependencies
+        CC[ChainClient]
+        FS[ForkSimulator]
+        MM[MempoolMonitor]
+    end
+    
+    PE --> pools
+    PE --> router
+    PE --> CC
+    PE --> FS
+    PE --> MM
+    
+    load_pools[load_pools] --> CC
+    load_pools --> pools
+    load_pools --> router
+    
+    refresh_pool[refresh_pool] --> CC
+    refresh_pool --> pools
+    
+    get_quote[get_quote] --> router
+    get_quote --> FS
+```
+
+### Example
+
+```rust
+use peanut_task::chain::{ChainClient, RpcUrl};
+use peanut_task::core::base_types::{Address, Token};
+use peanut_task::pricing::{Chain, PricingEngine};
+
+// Create engine (requires fork URL; run `just fork` first)
+let rpc = RpcUrl::new("{}", "http://127.0.0.1:8545")?;
+let client = ChainClient::new(vec![rpc], 10, 1)?;
+let mut engine = PricingEngine::new(
+    client,
+    "http://127.0.0.1:8545",
+    "wss://mainnet.infura.io/ws/v3/YOUR_KEY",
+    Chain::EthereumMainnet,
+    None,
+)?;
+
+// Load pools and get a quote
+let pair_addr = Address::from_string("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc")?;
+engine.load_pools(&[pair_addr])?;
+
+let usdc = Token::new(6, Some("USDC".to_string()));
+let weth = Token::native_eth();
+let quote = engine.get_quote(&usdc, &weth, 1_000_000, 30, 3)?;
+
+println!("Expected output: {}", quote.expected_output);
+println!("Simulated output: {}", quote.simulated_output);
+println!("Valid: {}", quote.is_valid());
+```
+
+Integration tests for the pricing engine require a running Anvil fork. Run `just fork` (with `ETH_RPC_URL` or `INFURA_API_KEY` in `.env`) before `cargo test`.
+

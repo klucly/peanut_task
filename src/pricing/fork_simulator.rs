@@ -238,12 +238,15 @@ impl ForkSimulator {
                 });
             }
             Ok(data) => {
-                let amounts: Vec<U256> =
+                let amounts: Vec<U256> = if is_eth_in {
+                    swapExactETHForTokensCall::abi_decode_returns(&data)
+                } else {
                     swapExactTokensForTokensCall::abi_decode_returns(&data)
-                        .map_err(|e| ForkSimulatorError::InvalidResponse(format!(
-                            "failed to decode swap return: {}",
-                            e
-                        )))?;
+                }
+                .map_err(|e| ForkSimulatorError::InvalidResponse(format!(
+                    "failed to decode swap return: {}",
+                    e
+                )))?;
                 let amount_out = amounts
                     .last()
                     .map(|u| u.to::<u128>())
