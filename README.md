@@ -1,10 +1,10 @@
 
 # peanut_task
 
-A test task for getting into Penut Trade.
+A test task for getting into Peanut Trade.
 
 ## Requirements
-- Rust 1.80+ (2024 edition or newer recommended)
+- Rust 1.85+ (2024 edition required)
 - [just](https://github.com/casey/just) command runner (install via `cargo install just` or your package manager)
 - [rustup](https://rustup.rs/) recommended for managing toolchains & components (rust-analyzer, clippy, etc.)
 
@@ -40,11 +40,11 @@ A test task for getting into Penut Trade.
    ```bash
    just install
    ```
-   (This usually just runs `cargo build` + `cargo fmt`/`clippy` checks — see Development Commands below)
+   (Adds rustup components rust-src, clippy, rustfmt; fetches Cargo crates and builds — see Development Commands below)
 
 ## Setup .env
 
-Copy `.env.example/` to `.env`
+Copy `.env.example` to `.env`
 
 ## Run the Project
 
@@ -59,8 +59,8 @@ just run
 Sample output from `just run`:
 
 ```
-Balance: 800.86843519544927043
-Nonce - pending: 35887, latest: 35887, earliest: 0
+Balance: 276.231750797334378783
+Nonce - pending: 37248, latest: 37248, earliest: 0
 Gas - base: 0 gwei, max fees - low: 0 gwei, medium: 0 gwei, high: 1 gwei
 TransactionBuilder: built tx to 0x742D35CC6634c0532925A3b844BC9E7595F0BEb0, value 0.001, gas_limit Some(25200)
 Gas estimate: 21000 units
@@ -71,7 +71,7 @@ Send transaction (expected error): All RPC endpoints failed: RPC request failed:
 ```
 
 ## Limitations & Assumptions
-- **Rust version**: Tested with stable 1.84+. May work on older editions but not guaranteed.
+- **Rust version**: Tested with stable 1.85+. Project uses 2024 edition; older toolchains will not work.
 - **Error handling**: RPC failures trigger fallback across configured endpoints; some flows (e.g. send) deliberately exercise expected-error paths (e.g. unsupported transaction type). Not all error paths are fully surfaced to the user.
 - **Platform**: Developed on Linux (Arch). Should work on macOS/Windows but shell commands in `justfile` or file paths / env vars may need minor tweaks.
 - **dotenv**: Loads `.env` at runtime if present.
@@ -83,6 +83,7 @@ Run `just --list` to see all available commands with descriptions.
 Common ones:
 
 ```bash
+just install      # Install deps: rustup components + cargo build
 just              # Runs the default pipeline: lint → build → test
 just all          # lint + build + test + doc
 just ci           # Same as CI would run (lint + build + test)
@@ -95,6 +96,8 @@ just doc          # cargo doc --open
 just clean        # cargo clean
 just nextest      # cargo nextest run (if you add nextest)
 ```
+
+**Running tests:** Many tests require a **running Anvil fork** and a **valid RPC URL**. Set `ETH_RPC_URL` or `INFURA_API_KEY` in `.env`, then run `just fork` in a separate terminal to start the fork before `just test`. Tests that need the fork (e.g. pricing engine, fork simulator, Uniswap pair) will skip or fail if the fork is not running.
 
 ## Pricing Module
 
@@ -162,5 +165,5 @@ println!("Simulated output: {}", quote.simulated_output);
 println!("Valid: {}", quote.is_valid());
 ```
 
-Integration tests for the pricing engine require a running Anvil fork. Run `just fork` (with `ETH_RPC_URL` or `INFURA_API_KEY` in `.env`) before `cargo test`.
+Integration tests for the pricing engine require a running Anvil fork and valid RPC. Run `just fork` (with `ETH_RPC_URL` or `INFURA_API_KEY` in `.env`) before `cargo test` or `just test`.
 

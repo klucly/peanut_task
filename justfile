@@ -8,6 +8,17 @@ default: lint build test
 
 all: lint build test doc
 
+# Install all dependencies required to build the project (rustup components + Cargo crates).
+[unix]
+install:
+    rustup component add rust-src clippy rustfmt 2>/dev/null || true
+    cargo build --all-targets --all-features
+
+[windows]
+install:
+    rustup component add rust-src clippy rustfmt 2>$null; if (-not $?) { exit 0 }
+    cargo build --all-targets --all-features
+
 # ────────────────────────────────────────────────
 # Development loop commands
 # ────────────────────────────────────────────────
@@ -31,8 +42,9 @@ test-validity *ARGS:
 test-watch *ARGS:
     cargo watch -x "test -- --nocapture {{ARGS}}"
 
-run *ARGS:
-    cargo run -- {{ARGS}}
+# Run main.rs by default, or another binary: just run price_impact_cli
+run bin="peanut_task" *ARGS:
+    cargo run --bin {{bin}} -- {{ARGS}}
 
 # Price impact CLI: pair address, --token-in USDC|ETH, --sizes 1000,10000,...
 # Requires INFURA_API_KEY or RPC_URL.
