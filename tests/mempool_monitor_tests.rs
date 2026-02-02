@@ -353,10 +353,13 @@ fn test_slippage_tolerance_high_slippage() {
 /// Skips if INFURA_API_KEY is not set. Run with: INFURA_API_KEY=... cargo test test_mempool_monitor_connect_with_timeout
 #[tokio::test]
 async fn test_mempool_monitor_connect_with_timeout() {
-    let api_key = match std::env::var("INFURA_API_KEY") {
-        Ok(k) if !k.is_empty() => k,
-        _ => return,
-    };
+    let api_key = std::env::var("INFURA_API_KEY")
+        .ok()
+        .filter(|k| !k.trim().is_empty())
+        .filter(|k| !k.trim().eq_ignore_ascii_case("apikey"))
+        .expect(
+            "INFURA_API_KEY not set. Run with: INFURA_API_KEY=... cargo test test_mempool_monitor_connect_with_timeout",
+        );
     let ws_url = format!("wss://mainnet.infura.io/ws/v3/{}", api_key);
     let monitor = MempoolMonitor::new(ws_url, |_| {});
 

@@ -80,6 +80,13 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 - `UniswapV2PairError`: `TokenNotInPair`, `Chain`, `InvalidResponse`, `Overflow`, `TokenMetadataUnavailable` (decimals/symbol fetch required; no fallbacks)
 - Tests for `from_chain` in `tests/uniswap_v2_pair_tests.rs` run only when `INFURA_API_KEY` is set and not the placeholder `apikey`; otherwise they skip (pass without network call).
 
+### fork_simulator
+- **ForkSimulator** — simulates Uniswap V2 swaps on a local Anvil fork. `ForkSimulator::new(fork_url, chain)` accepts `Chain` enum or `ChainConfig` directly.
+- **ChainConfig** / **Chain** — chain-specific router (Uniswap V2–compatible), WETH address, and chain_id. Predefined: `EthereumMainnet`, `Polygon`, `ArbitrumOne`, `Base`. Use `ChainConfig::custom` for others.
+- **simulate_swap**, **simulate_route** — full swap via `eth_call`; `simulate_route` uses `Route::path_addresses`.
+- **compare_simulation_vs_calculation** — uses Router `getAmountsOut` (view) to validate AMM math vs router; no token balance/approval needed.
+- Run `just fork` to start Anvil (requires `ETH_RPC_URL`).
+
 ### price_impact_analyzer
 - **PriceImpactAnalyzer** — analyzes price impact across different trade sizes; holds a `UniswapV2Pair`
 - `new(pair: UniswapV2Pair)` — construct from a pair
@@ -146,4 +153,4 @@ Re-exports only: from utility (so `Address`, `AddressError` come via utility fro
 
 ## Build
 
-`just test`, `just lint`, `just build`, `just run`, `just doc`. Price impact CLI: `just price-impact <PAIR> --token-in USDC --sizes 1000,10000,...`. Transaction analyzer: `just analyzer <TX_HASH> [--rpc URL]`. Integration test: `just integration-test` (requires `SECRET_KEY`, `INFURA_API_KEY`).
+`just test`, `just lint`, `just build`, `just run`, `just doc`. Price impact CLI: `just price-impact <PAIR> --token-in USDC --sizes 1000,10000,...`. Transaction analyzer: `just analyzer <TX_HASH> [--rpc URL]`. Integration test: `just integration-test` (requires `SECRET_KEY`, `INFURA_API_KEY`). Fork: `just fork` (requires `ETH_RPC_URL`).

@@ -1,4 +1,4 @@
-use crate::core::base_types::{Token, TokenAmount};
+use crate::core::base_types::{Address, Token, TokenAmount};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use thiserror::Error;
@@ -99,6 +99,22 @@ impl Route {
     /// Estimate gas: ~150k base + ~100k per hop.
     pub fn estimate_gas(&self) -> u64 {
         150_000 + (self.num_hops() as u64) * 100_000
+    }
+
+    /// Resolve path tokens to contract addresses using pool token metadata.
+    pub fn path_addresses(&self) -> Vec<Address> {
+        let mut addrs = Vec::with_capacity(self.path.len());
+        for (i, token) in self.path.iter().enumerate() {
+            let pool_idx = i.min(self.pools.len().saturating_sub(1));
+            let pool = &self.pools[pool_idx];
+            let addr = if token == &pool.token0.token {
+                pool.token0.address.clone()
+            } else {
+                pool.token1.address.clone()
+            };
+            addrs.push(addr);
+        }
+        addrs
     }
 }
 

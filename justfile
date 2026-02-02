@@ -47,6 +47,10 @@ analyzer *ARGS:
 integration-test *ARGS:
     cargo run --bin integration_test -- {{ARGS}}
 
+# Start local Anvil fork. Requires ETH_RPC_URL.
+fork:
+    bash scripts/start_fork.sh
+
 # ────────────────────────────────────────────────
 # Longer / heavier commands
 # ────────────────────────────────────────────────

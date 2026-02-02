@@ -89,6 +89,9 @@ impl Transaction {
             .with_to(self.to.alloy_address())
             .with_value(U256::from(self.value.raw))
             .with_input(Bytes::from(self.data.clone()));
+        if let Some(ref from) = self.from {
+            req = req.with_from(from.alloy_address());
+        }
         if let Some(n) = self.nonce {
             req = req.with_nonce(n);
         }

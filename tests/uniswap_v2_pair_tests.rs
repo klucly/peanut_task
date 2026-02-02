@@ -197,9 +197,18 @@ fn test_get_price_impact_calculations() {
     let _impact_on_amount = impact * Decimal::from(1000u64);
 }
 
+fn require_infura_api_key() {
+    let api_key = std::env::var("INFURA_API_KEY").unwrap_or_default();
+    if api_key.trim().is_empty() || api_key.trim().eq_ignore_ascii_case("apikey") {
+        panic!(
+            "INFURA_API_KEY not set or invalid. Run with: INFURA_API_KEY=... cargo test <test_name>"
+        );
+    }
+}
+
 fn chain_client_with_infura() -> Option<ChainClient> {
     let api_key = std::env::var("INFURA_API_KEY").ok()?;
-    if api_key.trim().eq_ignore_ascii_case("apikey") {
+    if api_key.trim().is_empty() || api_key.trim().eq_ignore_ascii_case("apikey") {
         return None;
     }
     let rpc = RpcUrl::new("https://mainnet.infura.io/v3/{}", &api_key).ok()?;
@@ -208,12 +217,17 @@ fn chain_client_with_infura() -> Option<ChainClient> {
 
 #[test]
 fn test_from_chain_fetches_pair() {
-    let client = match chain_client_with_infura() {
-        Some(c) => c,
-        None => return,
-    };
+    require_infura_api_key();
+    let client = chain_client_with_infura().expect(
+        "INFURA_API_KEY not set or invalid. Run with: INFURA_API_KEY=... cargo test test_from_chain_fetches_pair",
+    );
     let pair_address = Address::from_string("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc").unwrap();
-    let pair = UniswapV2Pair::from_chain(pair_address.clone(), &client).unwrap();
+    let pair = UniswapV2Pair::from_chain(pair_address.clone(), &client).unwrap_or_else(|e| {
+        panic!(
+            "RPC call failed: {}. Ensure INFURA_API_KEY is set and valid. Run with: INFURA_API_KEY=... cargo test test_from_chain_fetches_pair",
+            e
+        )
+    });
     assert_eq!(pair.address, pair_address);
     assert_ne!(pair.token0.address, pair.token1.address);
     assert!(pair.reserve0 > 0);
@@ -223,12 +237,17 @@ fn test_from_chain_fetches_pair() {
 
 #[test]
 fn test_from_chain_spot_and_amount_out_work() {
-    let client = match chain_client_with_infura() {
-        Some(c) => c,
-        None => return,
-    };
+    require_infura_api_key();
+    let client = chain_client_with_infura().expect(
+        "INFURA_API_KEY not set or invalid. Run with: INFURA_API_KEY=... cargo test test_from_chain_spot_and_amount_out_work",
+    );
     let pair_address = Address::from_string("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc").unwrap();
-    let pair = UniswapV2Pair::from_chain(pair_address, &client).unwrap();
+    let pair = UniswapV2Pair::from_chain(pair_address, &client).unwrap_or_else(|e| {
+        panic!(
+            "RPC call failed: {}. Ensure INFURA_API_KEY is set and valid. Run with: INFURA_API_KEY=... cargo test test_from_chain_spot_and_amount_out_work",
+            e
+        )
+    });
     let spot0 = pair.get_spot_price(&pair.token0.token).unwrap();
     assert!(spot0 > Decimal::ZERO);
     let amt_in = TokenAmount::new(1_000_000u128, pair.token0.token.clone());

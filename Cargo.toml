@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-alloy = { version = "1", features = ["consensus", "provider-http", "provider-ws"] }
+alloy = { version = "1", features = ["consensus", "provider-http", "provider-ws", "sol-types"] }
 rust_decimal = "1"
 url = "2.5"
 dotenvy = "0.15.7"

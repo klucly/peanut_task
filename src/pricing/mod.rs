@@ -1,3 +1,4 @@
+pub mod fork_simulator;
 pub mod mempool_monitor;
 pub mod price_impact_analyzer;
 pub mod route;
@@ -10,4 +11,8 @@ pub use price_impact_analyzer::{
 };
 pub use route::{Route, RouteComparison, RouteError, RouteFinder};
 pub use rust_decimal::Decimal;
+pub use fork_simulator::{
+    Chain, ChainConfig, ComparisonResult, DecodedLog, ForkSimulator, ForkSimulatorError,
+    SimulationResult, SwapParams,
+};
 pub use uniswap_v2_pair::{TokenInPair, UniswapV2Pair, UniswapV2PairError};
