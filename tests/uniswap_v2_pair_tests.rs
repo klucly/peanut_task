@@ -199,30 +199,30 @@ fn test_get_price_impact_calculations() {
     let _impact_on_amount = impact * Decimal::from(1000u64);
 }
 
-fn require_infura_api_key() {
-    let api_key = std::env::var("INFURA_API_KEY").unwrap_or_default();
-    if api_key.trim().is_empty() || api_key.trim().eq_ignore_ascii_case("apikey") {
-        panic!(
-            "INFURA_API_KEY not set or invalid. Run with: INFURA_API_KEY=... cargo test <test_name>"
-        );
+/// RPC URL for integration tests: FORK_URL (Anvil fork) or mainnet via INFURA_API_KEY.
+fn rpc_url_for_integration() -> Option<String> {
+    if let Ok(url) = std::env::var("FORK_URL") {
+        if !url.trim().is_empty() {
+            return Some(url);
+        }
     }
-}
-
-fn chain_client_with_infura() -> Option<ChainClient> {
     let api_key = std::env::var("INFURA_API_KEY").ok()?;
     if api_key.trim().is_empty() || api_key.trim().eq_ignore_ascii_case("apikey") {
         return None;
     }
-    let rpc = RpcUrl::new("https://mainnet.infura.io/v3/{}", &api_key).ok()?;
-    ChainClient::new(vec![rpc], 10, 1).ok()
+    RpcUrl::new("https://mainnet.infura.io/v3/{}", &api_key)
+        .ok()
+        .map(|r| r.as_url().to_string())
 }
 
 #[test]
+#[ignore] // Requires FORK_URL or INFURA_API_KEY; Infura may rate-limit (429)
 fn test_from_chain_fetches_pair() {
-    require_infura_api_key();
-    let client = chain_client_with_infura().expect(
-        "INFURA_API_KEY not set or invalid. Run with: INFURA_API_KEY=... cargo test test_from_chain_fetches_pair",
+    let rpc_url = rpc_url_for_integration().expect(
+        "FORK_URL or INFURA_API_KEY required. Run: FORK_URL=http://127.0.0.1:8545 cargo test test_from_chain_fetches_pair -- --ignored (or use INFURA_API_KEY for mainnet)",
     );
+    let rpc = RpcUrl::new("{}", &rpc_url).expect("RpcUrl parse failed");
+    let client = ChainClient::new(vec![rpc], 30, 3).expect("ChainClient init failed");
     let pair_address = Address::from_string("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc").unwrap();
     let pair = UniswapV2Pair::from_chain(pair_address.clone(), &client).unwrap_or_else(|e| {
         panic!(
@@ -238,11 +238,13 @@ fn test_from_chain_fetches_pair() {
 }
 
 #[test]
+#[ignore] // Requires FORK_URL or INFURA_API_KEY; Infura may rate-limit (429)
 fn test_from_chain_spot_and_amount_out_work() {
-    require_infura_api_key();
-    let client = chain_client_with_infura().expect(
-        "INFURA_API_KEY not set or invalid. Run with: INFURA_API_KEY=... cargo test test_from_chain_spot_and_amount_out_work",
+    let rpc_url = rpc_url_for_integration().expect(
+        "FORK_URL or INFURA_API_KEY required. Run: FORK_URL=http://127.0.0.1:8545 cargo test test_from_chain_spot_and_amount_out_work -- --ignored (or use INFURA_API_KEY for mainnet)",
     );
+    let rpc = RpcUrl::new("{}", &rpc_url).expect("RpcUrl parse failed");
+    let client = ChainClient::new(vec![rpc], 30, 3).expect("ChainClient init failed");
     let pair_address = Address::from_string("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc").unwrap();
     let pair = UniswapV2Pair::from_chain(pair_address, &client).unwrap_or_else(|e| {
         panic!(
@@ -255,22 +257,6 @@ fn test_from_chain_spot_and_amount_out_work() {
     let amt_in = TokenAmount::new(1_000_000u128, pair.token0.token.clone());
     let amount_out = pair.get_amount_out(&amt_in).unwrap();
     assert!(amount_out.raw > 0);
-}
-
-/// RPC URL for integration tests: FORK_URL (Anvil fork) or mainnet via INFURA_API_KEY.
-fn rpc_url_for_integration() -> Option<String> {
-    if let Ok(url) = std::env::var("FORK_URL") {
-        if !url.trim().is_empty() {
-            return Some(url);
-        }
-    }
-    let api_key = std::env::var("INFURA_API_KEY").ok()?;
-    if api_key.trim().is_empty() || api_key.trim().eq_ignore_ascii_case("apikey") {
-        return None;
-    }
-    RpcUrl::new("https://mainnet.infura.io/v3/{}", &api_key)
-        .ok()
-        .map(|r| r.as_url().to_string())
 }
 
 /// AMM output matches Solidity for same inputs (test against real pairs).

@@ -450,6 +450,9 @@ fn test_slippage_tolerance_high_slippage() {
 /// Skips if INFURA_API_KEY is not set. Run with: INFURA_API_KEY=... cargo test test_mempool_monitor_connect_with_timeout
 #[tokio::test]
 async fn test_mempool_monitor_connect_with_timeout() {
+    // Ensure rustls has a crypto provider (required when both aws-lc-rs and ring are in the tree)
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let api_key = std::env::var("INFURA_API_KEY")
         .ok()
         .filter(|k| !k.trim().is_empty())
