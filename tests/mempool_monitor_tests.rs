@@ -213,6 +213,103 @@ fn test_parse_truncated_data_returns_none() {
     assert!(parse_transaction(&tx, "0x000").is_none());
 }
 
+/// Mempool parsing handles malformed transactions: returns None without panicking.
+#[test]
+fn test_mempool_parsing_handles_malformed_transactions() {
+    let to = Address::from_string("0x3333333333333333333333333333333333333333").unwrap();
+    let token_a = Address::from_string("0x1111111111111111111111111111111111111111").unwrap();
+    let token_b = Address::from_string("0x2222222222222222222222222222222222222222").unwrap();
+
+    let base_tx = |data: Vec<u8>| Transaction {
+        from: Some(to.clone()),
+        to: Address::from_string("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap(),
+        value: TokenAmount::native_eth(0),
+        data,
+        nonce: None,
+        gas_limit: None,
+        max_fee_per_gas: None,
+        max_priority_fee: None,
+        chain_id: 1,
+    };
+
+    // Empty data
+    assert!(parse_transaction(&base_tx(vec![]), "0xempty").is_none());
+
+    // Data shorter than selector (1–3 bytes)
+    assert!(parse_transaction(&base_tx(vec![0x38]), "0x1").is_none());
+    assert!(parse_transaction(&base_tx(vec![0x38, 0xed]), "0x2").is_none());
+    assert!(parse_transaction(&base_tx(vec![0x38, 0xed, 0x17]), "0x3").is_none());
+
+    // Unknown selector
+    assert!(parse_transaction(
+        &base_tx(vec![0x00, 0x00, 0x00, 0x00]),
+        "0xunknown"
+    )
+    .is_none());
+
+    // swapExactTokensForTokens: truncated before path (needs at least 4 + 160 bytes)
+    let mut truncated = Vec::new();
+    truncated.extend_from_slice(&[0x38, 0xed, 0x17, 0x39]);
+    truncated.extend_from_slice(&u256_be(1_000_000u128));
+    truncated.extend_from_slice(&u256_be(500_000u128));
+    truncated.extend_from_slice(&u256_be(160u128));
+    truncated.extend_from_slice(&addr_bytes(&to.to_string()));
+    truncated.extend_from_slice(&u256_be(1735689600u128));
+    truncated.truncate(truncated.len() - 16);
+    assert!(parse_transaction(&base_tx(truncated), "0xtrunc").is_none());
+
+    // swapExactETHForTokens: truncated (needs at least 4 + 128 bytes for fixed params)
+    let mut eth_truncated = Vec::new();
+    eth_truncated.extend_from_slice(&[0x7f, 0xf3, 0x6a, 0xb5]);
+    eth_truncated.extend_from_slice(&u256_be(1_000_000u128));
+    eth_truncated.extend_from_slice(&u256_be(128u128));
+    eth_truncated.truncate(eth_truncated.len() - 8);
+    assert!(parse_transaction(
+        &Transaction {
+            data: eth_truncated,
+            value: TokenAmount::native_eth(1_000_000_000_000_000_000),
+            ..base_tx(vec![])
+        },
+        "0xeth_trunc"
+    )
+    .is_none());
+
+    // Path offset points past end of data (path_base + 32 > data.len())
+    let mut bad_offset = Vec::new();
+    bad_offset.extend_from_slice(&[0x38, 0xed, 0x17, 0x39]);
+    bad_offset.extend_from_slice(&u256_be(1_000_000u128));
+    bad_offset.extend_from_slice(&u256_be(500_000u128));
+    bad_offset.extend_from_slice(&u256_be(9999u128)); // path_offset = 9999, path_base = 10003
+    bad_offset.extend_from_slice(&addr_bytes(&to.to_string()));
+    bad_offset.extend_from_slice(&u256_be(1735689600u128));
+    assert!(parse_transaction(&base_tx(bad_offset), "0xbad_offset").is_none());
+
+    // Path length 0
+    let mut path_len_zero = Vec::new();
+    path_len_zero.extend_from_slice(&[0x38, 0xed, 0x17, 0x39]);
+    path_len_zero.extend_from_slice(&u256_be(1_000_000u128));
+    path_len_zero.extend_from_slice(&u256_be(500_000u128));
+    path_len_zero.extend_from_slice(&u256_be(160u128));
+    path_len_zero.extend_from_slice(&addr_bytes(&to.to_string()));
+    path_len_zero.extend_from_slice(&u256_be(1735689600u128));
+    path_len_zero.extend_from_slice(&u256_be(0u128));
+    assert!(parse_transaction(&base_tx(path_len_zero), "0xpath0").is_none());
+
+    // Valid swap still parses
+    let mut valid = Vec::new();
+    valid.extend_from_slice(&[0x38, 0xed, 0x17, 0x39]);
+    valid.extend_from_slice(&u256_be(1_000_000_000_000_000_000u128));
+    valid.extend_from_slice(&u256_be(500_000_000_000_000_000u128));
+    valid.extend_from_slice(&u256_be(160u128));
+    valid.extend_from_slice(&addr_bytes(&to.to_string()));
+    valid.extend_from_slice(&u256_be(1735689600u128));
+    valid.extend_from_slice(&u256_be(2u128));
+    valid.extend_from_slice(&addr_bytes(&token_a.to_string()));
+    valid.extend_from_slice(&addr_bytes(&token_b.to_string()));
+    let parsed = parse_transaction(&base_tx(valid), "0xvalid");
+    assert!(parsed.is_some(), "valid swap should parse after malformed cases");
+}
+
 #[test]
 fn test_parse_invalid_path_length_returns_none() {
     let to = Address::from_string("0x3333333333333333333333333333333333333333").unwrap();

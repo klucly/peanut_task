@@ -1,6 +1,8 @@
 use peanut_task::chain::{ChainClient, RpcUrl};
 use peanut_task::core::base_types::{Address, TokenAmount, Token};
-use peanut_task::pricing::{Decimal, TokenInPair, UniswapV2Pair};
+use peanut_task::pricing::{
+    Chain, Decimal, ForkSimulator, TokenInPair, UniswapV2Pair,
+};
 
 fn pair_address() -> Address {
     Address::from_string("0x0000000000000000000000000000000000000000").unwrap()
@@ -253,4 +255,74 @@ fn test_from_chain_spot_and_amount_out_work() {
     let amt_in = TokenAmount::new(1_000_000u128, pair.token0.token.clone());
     let amount_out = pair.get_amount_out(&amt_in).unwrap();
     assert!(amount_out.raw > 0);
+}
+
+/// RPC URL for integration tests: FORK_URL (Anvil fork) or mainnet via INFURA_API_KEY.
+fn rpc_url_for_integration() -> Option<String> {
+    if let Ok(url) = std::env::var("FORK_URL") {
+        if !url.trim().is_empty() {
+            return Some(url);
+        }
+    }
+    let api_key = std::env::var("INFURA_API_KEY").ok()?;
+    if api_key.trim().is_empty() || api_key.trim().eq_ignore_ascii_case("apikey") {
+        return None;
+    }
+    RpcUrl::new("https://mainnet.infura.io/v3/{}", &api_key)
+        .ok()
+        .map(|r| r.as_url().to_string())
+}
+
+/// AMM output matches Solidity for same inputs (test against real pairs).
+/// Compares our get_amount_out with Uniswap V2 Router's getAmountsOut for ETH/USDC and ETH/USDT.
+#[test]
+fn test_amm_output_matches_solidity_real_pairs() {
+    let rpc_url = rpc_url_for_integration().expect(
+        "FORK_URL or INFURA_API_KEY required. Run: FORK_URL=http://127.0.0.1:8545 cargo test test_amm_output_matches_solidity_real_pairs (or use INFURA_API_KEY for mainnet)",
+    );
+    let sim = ForkSimulator::new(&rpc_url, Chain::EthereumMainnet).expect("ForkSimulator init failed");
+    let rpc = RpcUrl::new("{}", &rpc_url).expect("RpcUrl parse failed");
+    let client = ChainClient::new(vec![rpc], 30, 3).expect("ChainClient init failed");
+
+    let pairs = [
+        ("ETH/USDC", "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc"),
+        ("ETH/USDT", "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852"),
+    ];
+
+    for (name, addr) in pairs {
+        let pair_address = Address::from_string(addr).unwrap();
+        let pair = UniswapV2Pair::from_chain(pair_address, &client).unwrap_or_else(|e| {
+            panic!("Failed to fetch {} pair: {}", name, e)
+        });
+
+        // Test token0 -> token1
+        let amount_in_t0 = if pair.token0.token.decimals == 6 {
+            1_000_000u128 // 1 USDC/USDT
+        } else {
+            10_000_000_000_000_000u128 // 0.01 ETH
+        };
+        let comp_t0 = sim
+            .compare_simulation_vs_calculation(&pair, amount_in_t0, &pair.token0.token)
+            .unwrap_or_else(|e| panic!("{} token0->token1: {}", name, e));
+        assert!(
+            comp_t0.matches,
+            "{} token0->token1: AMM output should match Solidity getAmountsOut. calculated={} simulated={}",
+            name, comp_t0.calculated, comp_t0.simulated
+        );
+
+        // Test token1 -> token0
+        let amount_in_t1 = if pair.token1.token.decimals == 6 {
+            1_000_000u128 // 1 USDC/USDT
+        } else {
+            10_000_000_000_000_000u128 // 0.01 ETH
+        };
+        let comp_t1 = sim
+            .compare_simulation_vs_calculation(&pair, amount_in_t1, &pair.token1.token)
+            .unwrap_or_else(|e| panic!("{} token1->token0: {}", name, e));
+        assert!(
+            comp_t1.matches,
+            "{} token1->token0: AMM output should match Solidity getAmountsOut. calculated={} simulated={}",
+            name, comp_t1.calculated, comp_t1.simulated
+        );
+    }
 }
