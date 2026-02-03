@@ -59,6 +59,11 @@ analyzer *ARGS:
 integration-test *ARGS:
     cargo run --bin integration_test -- {{ARGS}}
 
+# Order book analysis CLI. Usage: just orderbook [ETH/USDT] [--depth 20] [--url BASE_URL]
+# Requires BINANCE_TESTNET_API_KEY and BINANCE_TESTNET_SECRET.
+orderbook *ARGS:
+    cargo run --bin orderbook_cli -- {{ARGS}}
+
 # Start local Anvil fork. Requires ETH_RPC_URL.
 fork:
     bash scripts/start_fork.sh

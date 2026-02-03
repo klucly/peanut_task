@@ -49,3 +49,7 @@ path = "scripts/transaction_analyzer_cli.rs"
 [[bin]]
 name = "integration_test"
 path = "scripts/integration_test.rs"
+
+[[bin]]
+name = "orderbook_cli"
+path = "scripts/orderbook_cli.rs"
