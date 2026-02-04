@@ -261,11 +261,12 @@ fn test_from_chain_spot_and_amount_out_work() {
 
 /// AMM output matches Solidity for same inputs (test against real pairs).
 /// Compares our get_amount_out with Uniswap V2 Router's getAmountsOut for ETH/USDC and ETH/USDT.
+/// Requires a running Anvil fork (run `just fork` first) to ensure consistent state between our
+/// calculation and the Router's getAmountsOut.
 #[test]
 fn test_amm_output_matches_solidity_real_pairs() {
-    let rpc_url = rpc_url_for_integration().expect(
-        "FORK_URL or INFURA_API_KEY required. Run: FORK_URL=http://127.0.0.1:8545 cargo test test_amm_output_matches_solidity_real_pairs (or use INFURA_API_KEY for mainnet)",
-    );
+    let rpc_url = std::env::var("FORK_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8545".to_string());
     let sim = ForkSimulator::new(&rpc_url, Chain::EthereumMainnet).expect("ForkSimulator init failed");
     let rpc = RpcUrl::new("{}", &rpc_url).expect("RpcUrl parse failed");
     let client = ChainClient::new(vec![rpc], 30, 3).expect("ChainClient init failed");
