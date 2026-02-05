@@ -107,6 +107,7 @@ just              # Runs the default pipeline: lint → build → test
 just all          # lint + build + test + doc
 just ci           # Same as CI would run (lint + build + test)
 just run          # cargo run (with optional args: just run -- --help)
+just rebalancer   # inventory skew report & rebalance plans (--check | --plan ETH [--demo] [--test])
 just test         # cargo test
 just test-watch   # Watch mode for TDD (requires cargo-watch)
 just lint         # cargo fmt --check + clippy
@@ -117,6 +118,14 @@ just nextest      # cargo nextest run (if you add nextest)
 ```
 
 **Running tests:** Many tests require a **running Anvil fork** and a **valid RPC URL**. Set `ETH_RPC_URL` or `INFURA_API_KEY` in `.env`, then run `just fork` in a separate terminal to start the fork before `just test`. Tests that need the fork (e.g. pricing engine, fork simulator, Uniswap pair) will skip or fail if the fork is not running.
+
+## Inventory Module
+
+The inventory module tracks positions across CEX (Binance) and on-chain wallet. It provides skew analysis and rebalance planning (planning only; no execution).
+
+- **InventoryTracker** — single source of truth for balances; `update_from_cex`, `update_from_wallet`, `snapshot`, `skew`, `can_execute`, `record_trade`.
+- **RebalancePlanner** — generates transfer plans when skew exceeds threshold (default 30%); `check_all`, `plan`, `plan_all`, `estimate_cost`.
+- **rebalancer_cli** — `just rebalancer --check` (skew report) or `just rebalancer --plan ETH` (rebalance plan). Use `--demo` for hardcoded data, `--test` for Infura Sepolia. Requires `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_SECRET`, `SECRET_KEY`, and `INFURA_API_KEY` (or `ALCHEMY_API_KEY` or `ETH_RPC_URL`) for live data.
 
 ## Pricing Module
 

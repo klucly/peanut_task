@@ -64,6 +64,12 @@ integration-test *ARGS:
 orderbook *ARGS:
     cargo run --bin orderbook_cli -- {{ARGS}}
 
+# Rebalance planner CLI. Usage: just rebalancer --check | just rebalancer --plan ETH [--demo] [--test]
+# Live data: BINANCE_TESTNET_*, SECRET_KEY, INFURA_API_KEY or ALCHEMY_API_KEY or ETH_RPC_URL
+# --test: use Infura Sepolia testnet for wallet
+rebalancer *ARGS:
+    cargo run --bin rebalancer_cli -- {{ARGS}}
+
 # Start local Anvil fork. Requires ETH_RPC_URL.
 fork:
     bash scripts/start_fork.sh

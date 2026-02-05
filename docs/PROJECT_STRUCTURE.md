@@ -25,6 +25,15 @@ Rust library and binaries for Ethereum: wallet operations (EIP-191/EIP-712 signi
 - Integration test: loads wallet from env, fetches balance, builds a simple transfer (to fixed Sepolia address, 0.0001 ETH), prints build details (to, value, gas, max fee, max priority), signs, sends, waits for receipt, then prints block, status, gas used, fee.
 - Run: `just integration-test`. Requires `SECRET_KEY` and `INFURA_API_KEY` in env. Uses Sepolia Infura URL.
 
+### rebalancer_cli (`scripts/rebalancer_cli.rs`)
+- CLI for inventory rebalance planning. Usage: `rebalancer_cli --check | --plan ASSET [--demo] [--test]`.
+- `--check`: show skew report for all assets across Binance and wallet.
+- `--plan ASSET`: show rebalance plan for a specific asset (e.g. ETH).
+- `--demo`: use hardcoded demo data (no env vars).
+- `--test`: use Infura Sepolia testnet for wallet balance.
+- Requires `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_SECRET`, `SECRET_KEY`, and `INFURA_API_KEY` (or `ALCHEMY_API_KEY` or `ETH_RPC_URL`) for live data.
+- Run: `just rebalancer --check` or `just rebalancer --plan ETH`.
+
 ## Core
 
 Core is organized into modules: `address`, `utility`, `signatures`, `token`, `token_amount`, `transaction_receipt`, `base_types`, `wallet_manager`, `serializer`, `signature_algorithms`. The `address` module defines `Address` and `AddressError`; `utility` re-exports them so existing imports (e.g. from `base_types`) remain valid. `token` is declared before `token_amount` (dependency order).
@@ -122,6 +131,32 @@ Core is organized into modules: `address`, `utility`, `signatures`, `token`, `to
 - `TransactionBuilderError`: `MissingField`, `Chain`, `Wallet`
 - Tests in `tests/transaction_builder_tests.rs`: build fails without `to`; `with_gas_estimate` requires `to` (MissingField); `with_gas_estimate` with `to` fails with Chain when RPC unreachable; build_and_sign without gas_limit or gas_price fails; fluent chaining; priority FromStr; with_gas_price accepts priority enum
 
+## Inventory
+
+Inventory module tracks positions across CEX (e.g. Binance) and on-chain wallet. Supports skew analysis and rebalance planning (planning only; no execution).
+
+### types (`inventory/types.rs`)
+- **Venue** — `Binance`, `Wallet`; display as "binance", "wallet".
+- **VenueSkew** — per-venue amount, pct, deviation_pct for skew analysis.
+- **SkewResult** — asset, total, venues, max_deviation_pct, needs_rebalance.
+- **PortfolioSnapshot** — timestamp, venues, totals, total_usd.
+- **CanExecuteResult** — pre-flight check for arb execution.
+
+### errors (`inventory/errors.rs`)
+- **InventoryTrackerError** — `EmptyVenues`, `InvalidVenue`, `VenueNotTracked`, `ArithmeticOverflow`.
+
+### tracker (`inventory/tracker.rs`)
+- **InventoryTracker** — `new(venues)`, `update_from_cex`, `update_from_wallet`, `snapshot`, `get_available`, `can_execute`, `record_trade`, `skew`.
+- `skew(asset)` — computes distribution skew; `needs_rebalance` when max_deviation_pct >= 30.
+- Tests in `tests/inventory_tracker_tests.rs`.
+
+### rebalancer (`inventory/rebalancer.rs`)
+- **TransferPlan** — from_venue, to_venue, asset, amount, estimated_fee, estimated_time_min; `net_amount()`.
+- **RebalancePlanner** — `new(tracker, threshold_pct, target_ratio)`, `check_all`, `plan`, `plan_all`, `estimate_cost`.
+- Uses hardcoded transfer fees and min operating balances for ETH, USDT, USDC (testnet estimation).
+- Plans only — does NOT execute transfers.
+- Tests in `tests/rebalancer_tests.rs`.
+
 ## Pricing
 
 The pricing module integrates AMM math, routing, fork simulation, and mempool monitoring. Main entry point: `PricingEngine`.
@@ -192,6 +227,8 @@ Integration tests in `tests/` (one file per module). Many require a **running An
 |-----------|-------|
 | `address_derivation_tests.rs` | Address derivation from keys |
 | `chain_client_tests.rs` | Multi-URL fallback, error classification; uses httpmock |
+| `inventory_tracker_tests.rs` | Tracker CRUD, skew, can_execute |
+| `rebalancer_tests.rs` | Rebalance planner checks and plans |
 | `fork_simulator_tests.rs` | Requires fork |
 | `key_security_tests.rs` | Wallet key handling |
 | `key_validity_tests.rs` | Key validation |
@@ -221,5 +258,6 @@ Integration tests in `tests/` (one file per module). Many require a **running An
 - `just lint`, `just build`, `just test`, `just run`, `just doc`, `just clean`, `just fmt`
 - `just price-impact <PAIR> --token-in USDC --sizes 1000,10000,...`
 - `just analyzer <TX_HASH> [--rpc URL]`
+- `just rebalancer --check | just rebalancer --plan ETH [--demo] [--test]`
 - `just integration-test` (requires `SECRET_KEY`, `INFURA_API_KEY`)
 - `just fork` (requires `ETH_RPC_URL` or `INFURA_API_KEY` in `.env`)

@@ -53,3 +53,7 @@ path = "scripts/integration_test.rs"
 [[bin]]
 name = "orderbook_cli"
 path = "scripts/orderbook_cli.rs"
+
+[[bin]]
+name = "rebalancer_cli"
+path = "scripts/rebalancer_cli.rs"

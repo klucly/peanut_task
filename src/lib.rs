@@ -9,8 +9,8 @@ pub use exchange::{
     OrderBookAnalyzer, OrderBookAnalyzerError, OrderResult, OrderSide, TradingFees, WalkResult,
 };
 pub use inventory::{
-    CanExecuteResult, InventoryTracker, InventoryTrackerError, PortfolioSnapshot, SkewResult,
-    Venue, VenueSkew,
+    AssetSkewCheck, CanExecuteResult, CostEstimate, InventoryTracker, InventoryTrackerError,
+    PortfolioSnapshot, RebalancePlanner, SkewResult, TransferPlan, Venue, VenueSkew,
 };
 pub use core::signature_algorithms::{
     SignatureAlgorithm, SignatureData, SignatureAlgorithmError
