@@ -108,6 +108,7 @@ just all          # lint + build + test + doc
 just ci           # Same as CI would run (lint + build + test)
 just run          # cargo run (with optional args: just run -- --help)
 just rebalancer   # inventory skew report & rebalance plans (--check | --plan ETH [--demo] [--test])
+just pnl         # PnL summary & recent trades (--summary [--demo])
 just test         # cargo test
 just test-watch   # Watch mode for TDD (requires cargo-watch)
 just lint         # cargo fmt --check + clippy
@@ -121,11 +122,13 @@ just nextest      # cargo nextest run (if you add nextest)
 
 ## Inventory Module
 
-The inventory module tracks positions across CEX (Binance) and on-chain wallet. It provides skew analysis and rebalance planning (planning only; no execution).
+The inventory module tracks positions across CEX (Binance) and on-chain wallet. It provides skew analysis, rebalance planning (planning only; no execution), and PnL tracking for arb trades.
 
 - **InventoryTracker** — single source of truth for balances; `update_from_cex`, `update_from_wallet`, `snapshot`, `skew`, `can_execute`, `record_trade`.
 - **RebalancePlanner** — generates transfer plans when skew exceeds threshold (default 30%); `check_all`, `plan`, `plan_all`, `estimate_cost`.
+- **PnLEngine** — records completed arb trades and produces aggregate PnL reports; `record`, `summary`, `recent`, `export_csv`.
 - **rebalancer_cli** — `just rebalancer --check` (skew report) or `just rebalancer --plan ETH` (rebalance plan). Use `--demo` for hardcoded data, `--test` for Infura Sepolia. Requires `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_SECRET`, `SECRET_KEY`, and `INFURA_API_KEY` (or `ALCHEMY_API_KEY` or `ETH_RPC_URL`) for live data.
+- **pnl_cli** — `just pnl --summary` (PnL stats and recent trades). Use `--demo` for sample data.
 
 ## Pricing Module
 

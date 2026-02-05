@@ -70,6 +70,10 @@ orderbook *ARGS:
 rebalancer *ARGS:
     cargo run --bin rebalancer_cli -- {{ARGS}}
 
+# PnL summary CLI. Usage: just pnl --summary [--demo]
+pnl *ARGS:
+    cargo run --bin pnl_cli -- {{ARGS}}
+
 # Start local Anvil fork. Requires ETH_RPC_URL.
 fork:
     bash scripts/start_fork.sh

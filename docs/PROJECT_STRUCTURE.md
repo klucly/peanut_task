@@ -34,6 +34,12 @@ Rust library and binaries for Ethereum: wallet operations (EIP-191/EIP-712 signi
 - Requires `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_SECRET`, `SECRET_KEY`, and `INFURA_API_KEY` (or `ALCHEMY_API_KEY` or `ETH_RPC_URL`) for live data.
 - Run: `just rebalancer --check` or `just rebalancer --plan ETH`.
 
+### pnl_cli (`scripts/pnl_cli.rs`)
+- CLI for PnL summary and trade display. Usage: `pnl_cli --summary [--demo]`.
+- `--summary`: show aggregate PnL stats and recent trades.
+- `--demo`: use hardcoded sample trades (no env vars).
+- Run: `just pnl --summary [--demo]`.
+
 ## Core
 
 Core is organized into modules: `address`, `utility`, `signatures`, `token`, `token_amount`, `transaction_receipt`, `base_types`, `wallet_manager`, `serializer`, `signature_algorithms`. The `address` module defines `Address` and `AddressError`; `utility` re-exports them so existing imports (e.g. from `base_types`) remain valid. `token` is declared before `token_amount` (dependency order).
@@ -133,7 +139,7 @@ Core is organized into modules: `address`, `utility`, `signatures`, `token`, `to
 
 ## Inventory
 
-Inventory module tracks positions across CEX (e.g. Binance) and on-chain wallet. Supports skew analysis and rebalance planning (planning only; no execution).
+Inventory module tracks positions across CEX (e.g. Binance) and on-chain wallet. Supports skew analysis, rebalance planning (planning only; no execution), and PnL tracking for arb trades.
 
 ### types (`inventory/types.rs`)
 - **Venue** — `Binance`, `Wallet`; display as "binance", "wallet".
@@ -156,6 +162,14 @@ Inventory module tracks positions across CEX (e.g. Binance) and on-chain wallet.
 - Uses hardcoded transfer fees and min operating balances for ETH, USDT, USDC (testnet estimation).
 - Plans only — does NOT execute transfers.
 - Tests in `tests/rebalancer_tests.rs`.
+
+### pnl (`inventory/pnl.rs`)
+- **TradeLeg** — single execution leg: venue, symbol, side (OrderSide), amount, price, fee, fee_usd.
+- **ArbRecord** — complete arb: buy_leg, sell_leg, gas_cost_usd; `gross_pnl()`, `total_fees()`, `net_pnl()`, `notional()`, `net_pnl_bps()`.
+- **PnLEngine** — `record(trade)`, `summary()` (aggregate stats), `recent(n)`, `export_csv(path)`.
+- **PnLSummary** — total_trades, total_pnl_usd, win_rate, sharpe_estimate, pnl_by_hour, etc.
+- **ArbRecordSummary** — display-friendly trade summary for CLI.
+- Tests in `tests/pnl_tests.rs`.
 
 ## Pricing
 
@@ -228,6 +242,7 @@ Integration tests in `tests/` (one file per module). Many require a **running An
 | `address_derivation_tests.rs` | Address derivation from keys |
 | `chain_client_tests.rs` | Multi-URL fallback, error classification; uses httpmock |
 | `inventory_tracker_tests.rs` | Tracker CRUD, skew, can_execute |
+| `pnl_tests.rs` | PnL engine: gross/net PnL, summary, CSV export |
 | `rebalancer_tests.rs` | Rebalance planner checks and plans |
 | `fork_simulator_tests.rs` | Requires fork |
 | `key_security_tests.rs` | Wallet key handling |
@@ -259,5 +274,6 @@ Integration tests in `tests/` (one file per module). Many require a **running An
 - `just price-impact <PAIR> --token-in USDC --sizes 1000,10000,...`
 - `just analyzer <TX_HASH> [--rpc URL]`
 - `just rebalancer --check | just rebalancer --plan ETH [--demo] [--test]`
+- `just pnl --summary [--demo]`
 - `just integration-test` (requires `SECRET_KEY`, `INFURA_API_KEY`)
 - `just fork` (requires `ETH_RPC_URL` or `INFURA_API_KEY` in `.env`)

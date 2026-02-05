@@ -57,3 +57,7 @@ path = "scripts/orderbook_cli.rs"
 [[bin]]
 name = "rebalancer_cli"
 path = "scripts/rebalancer_cli.rs"
+
+[[bin]]
+name = "pnl_cli"
+path = "scripts/pnl_cli.rs"
