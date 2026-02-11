@@ -3,6 +3,7 @@ pub mod chain;
 pub mod exchange;
 pub mod pricing;
 pub mod inventory;
+pub mod integration;
 
 pub use exchange::{
     AssetBalance, BookSide, ExchangeClient, ExchangeConfig, ExchangeError, Fill, OrderBook,

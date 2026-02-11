@@ -205,4 +205,30 @@ impl PricingEngine {
         }
         tokens
     }
+
+    pub fn get_token_by_symbol(&self, symbol: &str) -> Option<Token> {
+        for token in self.pool_tokens() {
+            if token.symbol().unwrap_or_default() == symbol {
+                return Some(token);
+            }
+        }
+        None
+    }
+
+    pub fn get_pair_by_symbols(&self, symbol0: &str, symbol1: &str) -> Option<&UniswapV2Pair> {
+        for pair in self.pools.values() {
+            let token0_symbol = pair.token0.token.symbol().unwrap_or_default();
+            let token1_symbol = pair.token1.token.symbol().unwrap_or_default();
+            if token0_symbol == symbol0 && token1_symbol == symbol1 ||
+                token0_symbol == symbol1 && token1_symbol == symbol0
+            {
+                return Some(pair);
+            }
+        }
+        None
+    }
+
+    pub fn get_pair_by_address(&self, address: &Address) -> Option<&UniswapV2Pair> {
+        self.pools.get(address)
+    }
 }

@@ -61,3 +61,11 @@ path = "scripts/rebalancer_cli.rs"
 [[bin]]
 name = "pnl_cli"
 path = "scripts/pnl_cli.rs"
+
+[[bin]]
+name = "arb_checker_cli"
+path = "scripts/arb_checker_cli.rs"
+
+[[bin]]
+name = "arb_checker"
+path = "scripts/arb_checker_cli.rs"

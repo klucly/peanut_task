@@ -95,9 +95,6 @@ impl OrderBookAnalyzer {
     }
 
     /// Simulate filling `qty` of base asset against the order book.
-    ///
-    /// - **Buy**: Walk asks (buy base from sellers).
-    /// - **Sell**: Walk bids (sell base to buyers).
     pub fn walk_the_book(
         &self,
         side: OrderSide,
