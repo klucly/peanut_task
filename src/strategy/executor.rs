@@ -2,10 +2,10 @@
 
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::collections::HashSet;
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
 use tokio::time::timeout;
 
+use super::recovery::{CircuitBreaker, ReplayProtection};
 use super::signal::{Direction, Signal};
 use crate::exchange::ExchangeClient;
 use crate::inventory::InventoryTracker;
@@ -107,99 +107,7 @@ impl ExecutorConfig {
     }
 }
 
-/// Circuit breaker to prevent cascading failures.
-#[derive(Debug)]
-pub struct CircuitBreaker {
-    consecutive_failures: u32,
-    failure_threshold: u32,
-    last_failure_time: Option<OffsetDateTime>,
-    cooldown_duration: Duration,
-    total_successes: u64,
-    total_failures: u64,
-}
 
-impl CircuitBreaker {
-    pub fn new() -> Self {
-        Self {
-            consecutive_failures: 0,
-            failure_threshold: 5,
-            last_failure_time: None,
-            cooldown_duration: Duration::seconds(60),
-            total_successes: 0,
-            total_failures: 0,
-        }
-    }
-
-    pub fn is_open(&self) -> bool {
-        if self.consecutive_failures >= self.failure_threshold {
-            if let Some(last_failure) = self.last_failure_time {
-                let now = OffsetDateTime::now_utc();
-                let elapsed = now - last_failure;
-                return elapsed < self.cooldown_duration;
-            }
-            return true;
-        }
-        false
-    }
-
-    pub fn record_success(&mut self) {
-        self.consecutive_failures = 0;
-        self.total_successes += 1;
-    }
-
-    pub fn record_failure(&mut self) {
-        self.consecutive_failures += 1;
-        self.last_failure_time = Some(OffsetDateTime::now_utc());
-        self.total_failures += 1;
-    }
-}
-
-impl Default for CircuitBreaker {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Replay protection to prevent duplicate executions.
-#[derive(Debug)]
-pub struct ReplayProtection {
-    executed_signals: HashSet<String>,
-}
-
-impl ReplayProtection {
-    pub fn new() -> Self {
-        Self {
-            executed_signals: HashSet::new(),
-        }
-    }
-
-    pub fn is_duplicate(&self, signal: &Signal) -> bool {
-        self.executed_signals.contains(&signal.signal_id)
-    }
-
-    pub fn mark_executed(&mut self, signal: &Signal) {
-        self.executed_signals.insert(signal.signal_id.clone());
-        
-        // Clean up old entries if set grows too large
-        if self.executed_signals.len() > 1000 {
-            // Keep only most recent 500
-            let to_remove: Vec<String> = self.executed_signals
-                .iter()
-                .take(500)
-                .cloned()
-                .collect();
-            for id in to_remove {
-                self.executed_signals.remove(&id);
-            }
-        }
-    }
-}
-
-impl Default for ReplayProtection {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// Result from executing a single leg.
 #[derive(Debug)]
@@ -232,8 +140,8 @@ impl Executor {
             pricing: pricing_module,
             inventory: inventory_tracker,
             config: config.unwrap_or_default(),
-            circuit_breaker: CircuitBreaker::new(),
-            replay_protection: ReplayProtection::new(),
+            circuit_breaker: CircuitBreaker::default(),
+            replay_protection: ReplayProtection::default(),
         }
     }
 
