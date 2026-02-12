@@ -23,6 +23,7 @@ pub enum ExchangeTypeDirection {
 pub struct OpportunitySwap {
     pub pair: String,
     pub timestamp: OffsetDateTime,
+    pub amount: Decimal,
     pub dex_price: Decimal,
     pub cex_bid: Decimal,
     pub cex_ask: Decimal,
@@ -80,10 +81,6 @@ impl ArbChecker {
         let uniswap2pair = self.pricing_engine.get_pair_by_symbols(dex_token0, dex_token1)
             .ok_or(ArbCheckerError::InvalidPair(pair.to_string()))?;
         
-        // Determine input token (Base asset which we are selling on DEX)
-        // pair is "BASE/QUOTE". input is BASE.
-        // We need to find which token in the pair corresponds to dex_token0 (Base).
-        // Note: get_pair_by_symbols returns a pair that contains both, but token0/1 order is determined by address sort order.
         let (input_token, _output_token) = if uniswap2pair.token0.token.symbol().unwrap_or_default() == dex_token0 {
             (&uniswap2pair.token0.token, &uniswap2pair.token1.token)
         } else {
@@ -105,8 +102,6 @@ impl ArbChecker {
         )
             .map_err(|_| ArbCheckerError::InvalidUniswapV2PairError(pair.to_string()))?;
         
-        // Calculate gas cost with realistic parameters
-        // Typical Uniswap V2 swap: ~150k gas, current gas price ~30 gwei
         let gas_price_gwei = 30;
         let gas_limit = 150_000;
         let gas_result = dex_price_analyzer.estimate_true_cost(
@@ -129,12 +124,6 @@ impl ArbChecker {
             .map_err(|_| ArbCheckerError::InvalidExchangeClient(pair.to_string()))?
             .taker;
 
-        // Calculate normalized DEX price
-        // effective_price = raw_out / raw_in
-        // Normalized Price = effective_price * 10^(decimals_in - decimals_out)
-        // e.g. ETH (18) -> USDT (6). Price ~ 2000.
-        // raw_out (2000e6) / raw_in (1e18) = 2e-9.
-        // 2e-9 * 10^(18-6) = 2e-9 * 1e12 = 2000. Correct.
         let decimals_in = input_token.decimals as u32;
         let decimals_out = if input_token == &uniswap2pair.token0.token {
              uniswap2pair.token1.token.decimals as u32
@@ -150,16 +139,10 @@ impl ArbChecker {
         
         let dex_price_normalized = dex_output.effective_price * decimal_adjustment;
 
-        // Calculate gas cost in basis points
-        // gas_cost_eth is in wei, we need to convert to dollars and then to bps
-        // For ETH/USDT pair, we use the CEX price as the ETH price in USD
         let gas_cost_eth_decimal = Decimal::from_u128(gas_result.gas_cost_eth)
             .unwrap_or(Decimal::ZERO);
-        // Convert wei to ETH (divide by 1e18)
         let gas_cost_eth_human = gas_cost_eth_decimal / Decimal::from(1_000_000_000_000_000_000u128);
-        // Convert ETH to USD using CEX price
         let gas_cost_usd = gas_cost_eth_human * cex_bid;
-        // Calculate trade value in USD (convert amount from atomic units to human-readable)
         let amount_human = amount / Decimal::from(10u128.pow(decimals_in));
         let trade_value_usd = amount_human * cex_bid;
         let gas_cost_bps = if trade_value_usd > Decimal::ZERO {
@@ -169,27 +152,18 @@ impl ArbChecker {
         };
 
         let estimated_costs_bps = cex_fee_bps + dex_fee_bps + gas_cost_bps;
-        // Compare normalized DEX price (selling Base) with CEX Bid (buying Base? Wait. Arb is Buy Low, Sell High)
-        // If we Buy CEX (Ask), we Sell DEX.
-        // So we compare CEX Ask with DEX Price (Sell).
-        // Profit = DEX Price (Sell) - CEX Ask (Buy).
         let gap_bps = (dex_price_normalized - cex_ask) / cex_ask;
         
-        // Check inventory availability for both legs of the arb
-        // For BuyCexSellDex:
-        //   - Buy leg (CEX): need quote asset (e.g., USDT) to buy base asset (e.g., ETH)
-        //   - Sell leg (DEX/Wallet): need base asset (e.g., ETH) to sell for quote asset
-        // Note: amount is in atomic units (wei), need to convert to human-readable units
         let human_readable_amount = Decimal::from_u128(amount.to_i128().unwrap_or(0) as u128).unwrap_or(Decimal::ZERO) 
             / Decimal::from(10u128.pow(input_token.decimals() as u32));
-        let quote_amount_needed = cex_ask * human_readable_amount; // Amount of quote needed to buy on CEX
+        let quote_amount_needed = cex_ask * human_readable_amount;
         let inventory_check = self.inventory_tracker.can_execute(
-            Venue::Binance,           // buy_venue: CEX (need quote asset)
-            token1_symbol,            // buy_asset: quote (e.g., USDT)
-            quote_amount_needed,      // buy_amount
-            Venue::Wallet,            // sell_venue: DEX wallet (need base asset)
-            token0_symbol,            // sell_asset: base (e.g., ETH)
-            human_readable_amount,    // sell_amount
+            Venue::Binance,           
+            token1_symbol,            
+            quote_amount_needed,      
+            Venue::Wallet,            
+            token0_symbol,            
+            human_readable_amount,    
         );
         
         let inventory_ok = inventory_check.can_execute;
@@ -199,6 +173,7 @@ impl ArbChecker {
         let opportunity_swap = OpportunitySwap {
             pair: pair.to_string(),
             timestamp: OffsetDateTime::now_utc(),
+            amount,
             dex_price: dex_price_normalized,
             cex_bid: cex_bid,
             cex_ask: cex_ask,

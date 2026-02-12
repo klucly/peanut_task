@@ -83,29 +83,33 @@ impl SignalGenerator {
 
         let now = OffsetDateTime::now_utc();
         let expiry = now + Duration::seconds(self.config.signal_ttl_seconds);
+        
+        let trade_value_usd = (opportunity.amount * opportunity.cex_ask) / Decimal::from(10_000_000_000_000_000_000u128);
+        let gross_pnl = (opportunity.gap_bps / Decimal::from(10_000)) * trade_value_usd;
+        let fees = (opportunity.estimated_costs_bps / Decimal::from(10_000)) * trade_value_usd;
+        let net_pnl = gross_pnl - fees;
+        
         let signal = Signal::create(
             pair.to_string(),
             direction,
             opportunity.cex_ask,
             opportunity.dex_price,
             opportunity.gap_bps,
-            Decimal::ZERO, // Size not directly available from OpportunitySwap
-            Decimal::ZERO, // Gross PnL - would need size to calculate
-            opportunity.estimated_costs_bps / Decimal::from(10_000), // Convert bps to ratio
-            opportunity.estimated_net_pnl_bps / Decimal::from(10_000), // Convert bps to ratio
-            opportunity.estimated_net_pnl_bps, // Use net PnL bps as score
+            opportunity.amount,
+            gross_pnl,
+            fees,
+            net_pnl,
+            opportunity.estimated_net_pnl_bps,
             expiry,
             opportunity.inventory_ok,
             opportunity.executable,
         );
 
-        // Update cooldown tracker
         self.last_signal_time.insert(pair.to_string(), now);
 
         Some(signal)
     }
 
-    /// Check if a pair is in cooldown period.
     fn in_cooldown(&self, pair: &str) -> bool {
         if let Some(&last_time) = self.last_signal_time.get(pair) {
             let now = OffsetDateTime::now_utc();
@@ -116,12 +120,9 @@ impl SignalGenerator {
         }
     }
 
-    /// Get the configuration.
     pub fn config(&self) -> &GeneratorConfig {
         &self.config
     }
-
-    /// Get the fee structure.
     pub fn fee_structure(&self) -> &FeeStructure {
         &self.fee_structure
     }
