@@ -9,6 +9,7 @@ use peanut_task::{
     integration::{ArbChecker, arb_checker::OpportunitySwap}, 
     pricing::{Chain, PricingEngine}
 };
+use std::sync::{Arc, Mutex};
 
 fn main() {
     dotenvy::dotenv().ok();
@@ -47,10 +48,11 @@ fn main() {
     let pair_address = Address::from_string("0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852").unwrap();
     pricing_engine.load_pools(&[pair_address]).unwrap();
 
+    // Wrap modules in Arc<Mutex<>> for shared ownership
     let arb_checker = ArbChecker::new(
-        pricing_engine,
-        ExchangeClient::new(ExchangeConfig::from_env().map_err(|e| e.to_string()).unwrap()).unwrap(),
-        InventoryTracker::new(vec![Venue::Binance, Venue::Wallet]).unwrap(),
+        Arc::new(Mutex::new(pricing_engine)),
+        Arc::new(Mutex::new(ExchangeClient::new(ExchangeConfig::from_env().map_err(|e| e.to_string()).unwrap()).unwrap())),
+        Arc::new(Mutex::new(InventoryTracker::new(vec![Venue::Binance, Venue::Wallet]).unwrap())),
         PnLEngine::new(),
     );
     

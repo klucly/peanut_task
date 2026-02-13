@@ -1,6 +1,7 @@
 use ccxt_rust::Decimal;
 use rust_decimal::prelude::{ToPrimitive, FromPrimitive};
 use time::OffsetDateTime;
+use std::sync::{Arc, Mutex};
 
 use crate::OrderBookAnalyzer;
 use crate::OrderSide;
@@ -47,17 +48,17 @@ pub struct OpportunitySwapDetails {
 }
 
 pub struct ArbChecker {
-    pricing_engine: PricingEngine,
-    exchange_client: ExchangeClient,
-    inventory_tracker: InventoryTracker,
+    pricing_engine: Arc<Mutex<PricingEngine>>,
+    exchange_client: Arc<Mutex<ExchangeClient>>,
+    inventory_tracker: Arc<Mutex<InventoryTracker>>,
     pnl_engine: PnLEngine,
 }
 
 impl ArbChecker {
     pub fn new(
-        pricing_engine: PricingEngine,
-        exchange_client: ExchangeClient,
-        inventory_tracker: InventoryTracker,
+        pricing_engine: Arc<Mutex<PricingEngine>>,
+        exchange_client: Arc<Mutex<ExchangeClient>>,
+        inventory_tracker: Arc<Mutex<InventoryTracker>>,
         pnl_engine: PnLEngine,
     ) -> Self {
         Self {
@@ -71,41 +72,55 @@ impl ArbChecker {
     pub fn opportunity_swap_by_amount(&self, pair: &str, amount: Decimal) -> Result<OpportunitySwap, ArbCheckerError> {
         let (token0_symbol, token1_symbol) = pair.split_once('/').ok_or(ArbCheckerError::InvalidPair(pair.to_string()))?;
 
-        let order_book = self.exchange_client.fetch_order_book(pair, 100).map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?;
+        // Lock exchange to fetch order book
+        let exchange = self.exchange_client.lock().unwrap();
+        let order_book = exchange.fetch_order_book(pair, 100).map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?;
+        drop(exchange); // Release lock
+
         let analyzer = OrderBookAnalyzer::new(order_book);
         let cex_result = analyzer.walk_the_book(OrderSide::Buy, amount).map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?;
 
         let dex_token0 = if token0_symbol == "ETH" { "WETH" } else { token0_symbol };
         let dex_token1 = if token1_symbol == "ETH" { "WETH" } else { token1_symbol };
 
-        let uniswap2pair = self.pricing_engine.get_pair_by_symbols(dex_token0, dex_token1)
+        // Lock pricing to access DEX prices
+        let pricing = self.pricing_engine.lock().unwrap();
+        let uniswap2pair = pricing.get_pair_by_symbols(dex_token0, dex_token1)
             .ok_or(ArbCheckerError::InvalidPair(pair.to_string()))?;
         
+        // Clone the pair so we can release the lock
+        let uniswap2pair = uniswap2pair.clone();
+        drop(pricing); // Release lock
+
         let (input_token, _output_token) = if uniswap2pair.token0.token.symbol().unwrap_or_default() == dex_token0 {
             (&uniswap2pair.token0.token, &uniswap2pair.token1.token)
         } else {
             (&uniswap2pair.token1.token, &uniswap2pair.token0.token)
         };
 
-        let dex_price_analyzer = PriceImpactAnalyzer::new(uniswap2pair.clone());
+        // Convert human-readable amount to token units (raw)
+        let decimals_in = input_token.decimals();
+        let amount_raw = Decimal::from_f64(amount.to_f64().unwrap_or(0.0) * 10f64.powi(decimals_in as i32))
+            .map(|d| d.trunc().to_i128().unwrap_or(0) as u128)
+            .unwrap_or(0);
         
-        let dex_output = dex_price_analyzer.estimate_true_cost(
-            &TokenAmount::new(amount.to_i128().unwrap_or(0) as u128, input_token.clone()),
-            1,
-            1,
-        )
-            .map_err(|_| ArbCheckerError::InvalidPricingEngine(pair.to_string()))?;
-        
-        let dex_fee_bps = Decimal::from(uniswap2pair.fee_bps);
+        let ta_in = TokenAmount::new(amount_raw, input_token.clone());
+        let  ta_out = uniswap2pair.get_amount_out(&ta_in).map_err(|_| ArbCheckerError::InvalidPricingEngine(pair.to_string()))?;
+        let dex_bid: Decimal = Decimal::from_u128(ta_out.raw).unwrap_or(Decimal::ZERO) / Decimal::from(10u128.pow(ta_out.token.decimals as u32));
         let dex_slippage_impact_bps = uniswap2pair.get_price_impact(
-            &TokenAmount::new(amount.to_i128().unwrap_or(0) as u128, input_token.clone()),
+            &TokenAmount::new(amount_raw, input_token.clone()),
         )
             .map_err(|_| ArbCheckerError::InvalidUniswapV2PairError(pair.to_string()))?;
         
+        let dex_fee_bps = Decimal::from(uniswap2pair.fee_bps);
+        
+        // Create price impact analyzer for gas estimation
+        let dex_price_analyzer = PriceImpactAnalyzer::new(uniswap2pair.clone());
         let gas_price_gwei = 30;
         let gas_limit = 150_000;
-        let gas_result = dex_price_analyzer.estimate_true_cost(
-            &TokenAmount::new(amount.to_i128().unwrap_or(0) as u128, input_token.clone()),
+        
+        let dex_output = dex_price_analyzer.estimate_true_cost(
+            &TokenAmount::new(amount_raw, input_token.clone()),
             gas_price_gwei,
             gas_limit,
         )
@@ -118,11 +133,12 @@ impl ArbChecker {
 
         let cex_bid = cex_result.avg_price;
 
-        let cex_fee_bps = self
-            .exchange_client
+        let exchange = self.exchange_client.lock().unwrap();
+        let cex_fee_bps = exchange
             .get_trading_fees(pair)
             .map_err(|_| ArbCheckerError::InvalidExchangeClient(pair.to_string()))?
             .taker;
+        drop(exchange);
 
         let decimals_in = input_token.decimals as u32;
         let decimals_out = if input_token == &uniswap2pair.token0.token {
@@ -137,27 +153,37 @@ impl ArbChecker {
              Decimal::ONE / Decimal::from(10u128.pow(decimals_out - decimals_in))
         };
         
-        let dex_price_normalized = dex_output.effective_price * decimal_adjustment;
+        
+        let dex_price_normalized = if amount > Decimal::ZERO {
+            dex_bid / amount
+        } else {
+            Decimal::ZERO
+        };
 
-        let gas_cost_eth_decimal = Decimal::from_u128(gas_result.gas_cost_eth)
-            .unwrap_or(Decimal::ZERO);
-        let gas_cost_eth_human = gas_cost_eth_decimal / Decimal::from(1_000_000_000_000_000_000u128);
-        let gas_cost_usd = gas_cost_eth_human * cex_bid;
-        let amount_human = amount / Decimal::from(10u128.pow(decimals_in));
-        let trade_value_usd = amount_human * cex_bid;
-        let gas_cost_bps = if trade_value_usd > Decimal::ZERO {
-            (gas_cost_usd / trade_value_usd) * Decimal::from(10000)
+        let gap_bps = if cex_ask > Decimal::ZERO {
+            (dex_price_normalized - cex_ask) / cex_ask
+        } else {
+            Decimal::ZERO
+        };
+        
+        let gas_cost_eth_decimal = Decimal::from_u128(dex_output.gas_cost_eth)
+            .unwrap_or(Decimal::ZERO) / Decimal::from(10u128.pow(18));
+        let eth_price_usd = cex_ask / decimal_adjustment;
+        let gas_cost_usd = gas_cost_eth_decimal * eth_price_usd;
+        let gas_cost_bps = if cex_ask != Decimal::ZERO {
+            (gas_cost_usd / (cex_ask * amount)) * Decimal::from(10000)
         } else {
             Decimal::ZERO
         };
 
         let estimated_costs_bps = cex_fee_bps + dex_fee_bps + gas_cost_bps;
-        let gap_bps = (dex_price_normalized - cex_ask) / cex_ask;
         
         let human_readable_amount = Decimal::from_u128(amount.to_i128().unwrap_or(0) as u128).unwrap_or(Decimal::ZERO) 
             / Decimal::from(10u128.pow(input_token.decimals() as u32));
         let quote_amount_needed = cex_ask * human_readable_amount;
-        let inventory_check = self.inventory_tracker.can_execute(
+        
+        let inventory = self.inventory_tracker.lock().unwrap();
+        let inventory_check = inventory.can_execute(
             Venue::Binance,           
             token1_symbol,            
             quote_amount_needed,      
@@ -165,6 +191,7 @@ impl ArbChecker {
             token0_symbol,            
             human_readable_amount,    
         );
+        drop(inventory);
         
         let inventory_ok = inventory_check.can_execute;
         let net_pnl_positive = (gap_bps * Decimal::from(10000)) > estimated_costs_bps;
@@ -173,8 +200,8 @@ impl ArbChecker {
         let opportunity_swap = OpportunitySwap {
             pair: pair.to_string(),
             timestamp: OffsetDateTime::now_utc(),
-            amount,
-            dex_price: dex_price_normalized,
+            amount: human_readable_amount, // Changed from `amount` to `human_readable_amount`
+            dex_price: dex_price_normalized, // Use unit price!
             cex_bid: cex_bid,
             cex_ask: cex_ask,
             gap_bps: gap_bps,
@@ -186,7 +213,10 @@ impl ArbChecker {
             details: OpportunitySwapDetails {
                 dex_slippage_impact_bps: dex_slippage_impact_bps,
                 cex_slippage_bps: cex_result.slippage_bps,
-                cex_fee_bps: self.exchange_client.get_trading_fees(pair).map_err(|_| ArbCheckerError::InvalidExchangeClient(pair.to_string()))?.taker,
+                cex_fee_bps: {
+                    let exchange = self.exchange_client.lock().unwrap();
+                    exchange.get_trading_fees(pair).map_err(|_| ArbCheckerError::InvalidExchangeClient(pair.to_string()))?.taker
+                },
                 dex_fee_bps: Decimal::from(uniswap2pair.fee_bps),
                 gas_cost_bps: gas_cost_bps,
                 gas_cost_usd: gas_cost_usd,
@@ -195,7 +225,7 @@ impl ArbChecker {
         Ok(opportunity_swap)
     }
 
-    pub fn check(&self, pair: &str) -> Result<OpportunitySwap, ArbCheckerError> {
+    pub fn check(&self, pair: &str) -> Result<Option<OpportunitySwap>, ArbCheckerError> {
         let amounts = (0..50).map(|i| (2u128.pow(i)) * 10000).collect::<Vec<u128>>();
         let mut swaps = Vec::new();
         for amount in amounts {
@@ -204,8 +234,23 @@ impl ArbChecker {
                 swaps.push(swap);
             }
         }
+        
+        if swaps.is_empty() {
+            return Ok(None);
+        }
+
         let max_swap = swaps.iter().max_by_key(|swap| swap.estimated_net_pnl_bps).unwrap();
-        Ok(max_swap.clone())
+        Ok(Some(max_swap.clone()))
+    }
+    /// Access the exchange client.
+    pub fn exchange(&self) -> Arc<Mutex<ExchangeClient>> {
+        Arc::clone(&self.exchange_client)
+    }
+    pub fn pricing_engine(&self) -> Arc<Mutex<PricingEngine>> {
+        Arc::clone(&self.pricing_engine)
+    }
+    pub fn inventory(&self) -> Arc<Mutex<InventoryTracker>> {
+        Arc::clone(&self.inventory_tracker)
     }
 }
 

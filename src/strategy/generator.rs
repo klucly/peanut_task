@@ -68,8 +68,8 @@ impl SignalGenerator {
         }
 
         let opportunity = match self.arb_checker.check(pair) {
-            Ok(opp) => opp,
-            Err(_) => return None,
+            Ok(Some(opp)) => opp,
+            _ => return None,
         };
 
         if !opportunity.executable {
@@ -125,5 +125,8 @@ impl SignalGenerator {
     }
     pub fn fee_structure(&self) -> &FeeStructure {
         &self.fee_structure
+    }
+    pub fn arb_checker(&self) -> &ArbChecker {
+        &self.arb_checker
     }
 }

@@ -7,6 +7,7 @@ use peanut_task::inventory::{InventoryTracker, PnLEngine, Venue};
 use peanut_task::pricing::{Chain, PricingEngine};
 use rust_decimal::Decimal;
 use std::env;
+use std::sync::{Arc, Mutex};
 
 fn init_tracing() {
     let _ = tracing_subscriber::fmt()
@@ -163,15 +164,15 @@ fn test_arb_profit() {
     let pnl_engine = PnLEngine::new();
 
     let arb_checker = ArbChecker::new(
-        pricing_engine,
-        exchange_client,
-        inventory_tracker,
+        Arc::new(Mutex::new(pricing_engine)),
+        Arc::new(Mutex::new(exchange_client)),
+        Arc::new(Mutex::new(inventory_tracker)),
         pnl_engine,
     );
 
-    // Check 1 ETH (10^18 wei)
-    let amount_in = 1_000_000_000_000_000_000u128;
-    let result = arb_checker.opportunity_swap_by_amount("ETH/USDT", Decimal::from(amount_in));
+    // Check 1 ETH
+    let amount_in = Decimal::ONE;
+    let result = arb_checker.opportunity_swap_by_amount("ETH/USDT", amount_in);
     assert!(result.is_ok());
     let swap = result.unwrap();
     
@@ -245,15 +246,15 @@ fn test_arb_no_profit() {
     let pnl_engine = PnLEngine::new();
 
     let arb_checker = ArbChecker::new(
-        pricing_engine,
-        exchange_client,
-        inventory_tracker,
+        Arc::new(Mutex::new(pricing_engine)),
+        Arc::new(Mutex::new(exchange_client)),
+        Arc::new(Mutex::new(inventory_tracker)),
         pnl_engine,
     );
 
-    // Check 1 ETH (10^18 wei)
-    let amount_in = 1_000_000_000_000_000_000u128;
-    let result = arb_checker.opportunity_swap_by_amount("ETH/USDT", Decimal::from(amount_in));
+    // Check 1 ETH
+    let amount_in = Decimal::ONE;
+    let result = arb_checker.opportunity_swap_by_amount("ETH/USDT", amount_in);
     assert!(result.is_ok());
     let swap = result.unwrap();
 

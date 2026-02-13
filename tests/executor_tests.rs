@@ -1,27 +1,29 @@
 use peanut_task::{Direction, Signal};
 use peanut_task::strategy::{ExecutorConfig, ExecutorState, Executor};
 use peanut_task::exchange::{ExchangeClient, ExchangeConfig};
-use peanut_task::inventory::{InventoryTracker, Venue};
-use peanut_task::pricing::PricingEngine;
+use peanut_task::inventory::{InventoryTracker, PnLEngine, Venue};
+use peanut_task::pricing::{Chain, PricingEngine};
 use peanut_task::chain::{ChainClient, RpcUrl};
-use peanut_task::pricing::Chain;
+use peanut_task::core::base_types::Address;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use time::{Duration, OffsetDateTime};
-use std::sync::Mutex;
+use std::env;
+use std::sync::{Arc, Mutex};
 
 // Global mutex to serialize executor creation (so ChainClient runtime creation happens one at a time)
 static INIT_LOCK: Mutex<()> = Mutex::new(());
 
 // Helper to create dependencies in non-async context
 // Returns owned instances for Executor::new
-fn create_dependencies() -> (ExchangeClient, PricingEngine, InventoryTracker) {
+fn create_dependencies() -> (Arc<Mutex<ExchangeClient>>, Arc<Mutex<PricingEngine>>, Arc<Mutex<InventoryTracker>>) {
     // Lock to ensure only one thread creates ChainClient at a time
     let _lock = INIT_LOCK.lock().unwrap();
     
     let exchange = {
         let config = ExchangeConfig::from_env()
             .expect("Failed to load exchange config from env");
-        ExchangeClient::new(config).expect("Failed to create exchange client")
+        Arc::new(Mutex::new(ExchangeClient::new(config).expect("Failed to create exchange client")))
     };
     
     let pricing = {
@@ -31,17 +33,17 @@ fn create_dependencies() -> (ExchangeClient, PricingEngine, InventoryTracker) {
         let chain_client = ChainClient::new(vec![rpc], 60, 3)
             .expect("Failed to create chain client");
         
-        PricingEngine::new(
+        Arc::new(Mutex::new(PricingEngine::new(
             chain_client,
             "https://eth-mainnet.g.alchemy.com/v2/test",
             "wss://eth-mainnet.g.alchemy.com/v2/test",
             Chain::EthereumMainnet,
             None,
-        ).expect("Failed to create pricing engine")
+        ).expect("Failed to create pricing engine")))
     };
     
-    let inventory = InventoryTracker::new(vec![Venue::Binance, Venue::Wallet])
-        .expect("Failed to create inventory tracker");
+    let inventory = Arc::new(Mutex::new(InventoryTracker::new(vec![Venue::Binance, Venue::Wallet])
+        .expect("Failed to create inventory tracker")));
     
     (exchange, pricing, inventory)
 }
@@ -121,8 +123,7 @@ fn test_execute_success() {
     let signal = create_test_signal();
     
     // Now run the async execution
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let ctx = rt.block_on(executor.execute(signal));
+    let ctx = executor.execute(signal);
 
     assert_eq!(ctx.state, ExecutorState::Done);
     assert!(ctx.error.is_none());
@@ -158,8 +159,7 @@ fn test_execute_cex_timeout() {
         true,
     );
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let ctx = rt.block_on(executor.execute(signal));
+    let ctx = executor.execute(signal);
 
     assert_eq!(ctx.state, ExecutorState::Failed);
     assert!(ctx.error.is_some());
@@ -176,8 +176,7 @@ fn test_execute_dex_failure_unwinds() {
 
     let signal = create_test_signal();
     
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let ctx = rt.block_on(executor.execute(signal));
+    let ctx = executor.execute(signal);
 
     // In simulation mode, both legs succeed
     assert_eq!(ctx.state, ExecutorState::Done);
@@ -196,8 +195,7 @@ fn test_partial_fill_rejected() {
     let mut executor = create_test_executor_sync(Some(config));
     let signal = create_test_signal();
     
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let ctx = rt.block_on(executor.execute(signal));
+    let ctx = executor.execute(signal);
 
     // In simulation mode, this will succeed since we get 100% fill
     assert_eq!(ctx.state, ExecutorState::Done);
@@ -207,8 +205,6 @@ fn test_partial_fill_rejected() {
 fn test_circuit_breaker_blocks() {
     let mut executor = create_test_executor_sync(Some(ExecutorConfig::default()));
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    
     // Trigger circuit breaker by simulating 5 consecutive failures quickly
    // Use expired signals which will fail validation
     for i in 0..5 {
@@ -228,7 +224,7 @@ fn test_circuit_breaker_blocks() {
             true,
             true,
         );
-        let ctx = rt.block_on(executor.execute(signal));
+        let ctx = executor.execute(signal);
         // Verify each one fails
         assert_eq!(ctx.state, ExecutorState::Failed, "Failure {} should result in Failed state", i + 1);
     }
@@ -238,7 +234,7 @@ fn test_circuit_breaker_blocks() {
     
     // Try to execute with a valid signal - should be blocked by circuit breaker
     let signal = create_test_signal();
-    let ctx = rt.block_on(executor.execute(signal));
+    let ctx = executor.execute(signal);
 
     assert_eq!(ctx.state, ExecutorState::Failed, "Circuit breaker should block execution");
     assert!(ctx.error.is_some());
@@ -252,14 +248,12 @@ fn test_replay_protection() {
     let signal = create_test_signal();
     let _signal_id = signal.signal_id.clone();
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    
     // First execution should succeed
-    let ctx1 = rt.block_on(executor.execute(signal.clone()));
+    let ctx1 = executor.execute(signal.clone());
     assert_eq!(ctx1.state, ExecutorState::Done);
 
     // Second execution of same signal should be blocked
-    let ctx2 = rt.block_on(executor.execute(signal));
+    let ctx2 = executor.execute(signal);
     assert_eq!(ctx2.state, ExecutorState::Failed);
     assert!(ctx2.error.is_some());
     assert_eq!(ctx2.error.unwrap(), "Duplicate signal");
@@ -282,8 +276,7 @@ fn test_dex_first_execution_flow() {
 
     let signal = create_test_signal();
     
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let ctx = rt.block_on(executor.execute(signal));
+    let ctx = executor.execute(signal);
 
     assert_eq!(ctx.state, ExecutorState::Done);
     assert_eq!(ctx.leg1_venue, "dex");
@@ -313,8 +306,7 @@ fn test_signal_validation_failure() {
         true,
     );
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let ctx = rt.block_on(executor.execute(signal));
+    let ctx = executor.execute(signal);
 
     assert_eq!(ctx.state, ExecutorState::Failed);
     assert!(ctx.error.is_some());
@@ -341,8 +333,7 @@ fn test_pnl_calculation_buy_cex_sell_dex() {
         true,
     );
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let ctx = rt.block_on(executor.execute(signal));
+    let ctx = executor.execute(signal);
 
     assert_eq!(ctx.state, ExecutorState::Done);
     assert!(ctx.actual_net_pnl.is_some());
@@ -374,8 +365,7 @@ fn test_pnl_calculation_buy_dex_sell_cex() {
         true,
     );
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let ctx = rt.block_on(executor.execute(signal));
+    let ctx = executor.execute(signal);
 
     assert_eq!(ctx.state, ExecutorState::Done);
     assert!(ctx.actual_net_pnl.is_some());

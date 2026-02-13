@@ -1,9 +1,7 @@
-//! Executor module for multi-leg arbitrage execution.
-
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::sync::{Arc, Mutex};
 use time::OffsetDateTime;
-use tokio::time::timeout;
 
 use super::recovery::{CircuitBreaker, ReplayProtection};
 use super::signal::{Direction, Signal};
@@ -107,8 +105,6 @@ impl ExecutorConfig {
     }
 }
 
-
-
 /// Result from executing a single leg.
 #[derive(Debug)]
 struct LegResult {
@@ -120,9 +116,9 @@ struct LegResult {
 
 /// Execute arbitrage trades across CEX and DEX.
 pub struct Executor {
-    exchange: ExchangeClient,
-    pricing: PricingEngine,
-    inventory: InventoryTracker,
+    exchange: Arc<Mutex<ExchangeClient>>,
+    pricing: Arc<Mutex<PricingEngine>>,
+    inventory: Arc<Mutex<InventoryTracker>>,
     config: ExecutorConfig,
     pub circuit_breaker: CircuitBreaker,
     pub replay_protection: ReplayProtection,
@@ -130,9 +126,9 @@ pub struct Executor {
 
 impl Executor {
     pub fn new(
-        exchange_client: ExchangeClient,
-        pricing_module: PricingEngine,
-        inventory_tracker: InventoryTracker,
+        exchange_client: Arc<Mutex<ExchangeClient>>,
+        pricing_module: Arc<Mutex<PricingEngine>>,
+        inventory_tracker: Arc<Mutex<InventoryTracker>>,
         config: Option<ExecutorConfig>,
     ) -> Self {
         Self {
@@ -146,7 +142,7 @@ impl Executor {
     }
 
     /// Execute arbitrage trade based on signal.
-    pub async fn execute(&mut self, signal: Signal) -> ExecutionContext {
+    pub fn execute(&mut self, signal: Signal) -> ExecutionContext {
         let mut ctx = ExecutionContext::new(signal.clone());
 
         // Pre-flight checks
@@ -179,9 +175,9 @@ impl Executor {
 
         // Execute based on leg order strategy
         ctx = if self.config.use_flashbots {
-            self._execute_dex_first(ctx).await
+            self._execute_dex_first(ctx)
         } else {
-            self._execute_cex_first(ctx).await
+            self._execute_cex_first(ctx)
         };
 
         // Record result
@@ -197,25 +193,15 @@ impl Executor {
     }
 
     /// CEX leg first (default for non-Flashbots).
-    async fn _execute_cex_first(&mut self, mut ctx: ExecutionContext) -> ExecutionContext {
+    fn _execute_cex_first(&mut self, mut ctx: ExecutionContext) -> ExecutionContext {
         let signal = &ctx.signal;
 
         // Leg 1: CEX
         ctx.state = ExecutorState::Leg1Pending;
         ctx.leg1_venue = "cex".to_string();
 
-        let leg1_future = self._execute_cex_leg(signal, signal.size);
-        let timeout_duration = std::time::Duration::from_secs(self.config.leg1_timeout_secs);
+        let leg1 = self._execute_cex_leg(signal, signal.size);
         
-        let leg1 = match timeout(timeout_duration, leg1_future).await {
-            Ok(result) => result,
-            Err(_) => {
-                ctx.state = ExecutorState::Failed;
-                ctx.error = Some("CEX timeout".to_string());
-                return ctx;
-            }
-        };
-
         if !leg1.success {
             ctx.state = ExecutorState::Failed;
             ctx.error = Some(leg1.error.unwrap_or_else(|| "CEX rejected".to_string()));
@@ -236,23 +222,11 @@ impl Executor {
         ctx.state = ExecutorState::Leg2Pending;
         ctx.leg2_venue = "dex".to_string();
 
-        let leg2_future = self._execute_dex_leg(signal, ctx.leg1_fill_size.unwrap());
-        let timeout_duration = std::time::Duration::from_secs(self.config.leg2_timeout_secs);
-        
-        let leg2 = match timeout(timeout_duration, leg2_future).await {
-            Ok(result) => result,
-            Err(_) => {
-                ctx.state = ExecutorState::Unwinding;
-                self._unwind(&ctx).await;
-                ctx.state = ExecutorState::Failed;
-                ctx.error = Some("DEX timeout - unwound".to_string());
-                return ctx;
-            }
-        };
+        let leg2 = self._execute_dex_leg(signal, ctx.leg1_fill_size.unwrap());
 
         if !leg2.success {
             ctx.state = ExecutorState::Unwinding;
-            self._unwind(&ctx).await;
+            self._unwind(&ctx);
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("DEX failed - unwound".to_string());
             return ctx;
@@ -266,24 +240,14 @@ impl Executor {
     }
 
     /// DEX leg first (when using Flashbots - failed tx = no cost).
-    async fn _execute_dex_first(&mut self, mut ctx: ExecutionContext) -> ExecutionContext {
+    fn _execute_dex_first(&mut self, mut ctx: ExecutionContext) -> ExecutionContext {
         let signal = &ctx.signal;
 
         // Leg 1: DEX
         ctx.state = ExecutorState::Leg1Pending;
         ctx.leg1_venue = "dex".to_string();
 
-        let leg1_future = self._execute_dex_leg(signal, signal.size);
-        let timeout_duration = std::time::Duration::from_secs(self.config.leg2_timeout_secs);
-        
-        let leg1 = match timeout(timeout_duration, leg1_future).await {
-            Ok(result) => result,
-            Err(_) => {
-                ctx.state = ExecutorState::Failed;
-                ctx.error = Some("DEX timeout".to_string());
-                return ctx;
-            }
-        };
+        let leg1 = self._execute_dex_leg(signal, signal.size);
 
         if !leg1.success {
             ctx.state = ExecutorState::Failed;
@@ -299,23 +263,11 @@ impl Executor {
         ctx.state = ExecutorState::Leg2Pending;
         ctx.leg2_venue = "cex".to_string();
 
-        let leg2_future = self._execute_cex_leg(signal, ctx.leg1_fill_size.unwrap());
-        let timeout_duration = std::time::Duration::from_secs(self.config.leg1_timeout_secs);
-        
-        let leg2 = match timeout(timeout_duration, leg2_future).await {
-            Ok(result) => result,
-            Err(_) => {
-                ctx.state = ExecutorState::Unwinding;
-                self._unwind(&ctx).await;
-                ctx.state = ExecutorState::Failed;
-                ctx.error = Some("CEX timeout after DEX - unwound".to_string());
-                return ctx;
-            }
-        };
+        let leg2 = self._execute_cex_leg(signal, ctx.leg1_fill_size.unwrap());
 
         if !leg2.success {
             ctx.state = ExecutorState::Unwinding;
-            self._unwind(&ctx).await;
+            self._unwind(&ctx);
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("CEX failed after DEX - unwound".to_string());
             return ctx;
@@ -329,9 +281,9 @@ impl Executor {
     }
 
     /// Execute CEX leg.
-    async fn _execute_cex_leg(&self, signal: &Signal, size: Decimal) -> LegResult {
+    fn _execute_cex_leg(&self, signal: &Signal, size: Decimal) -> LegResult {
         if self.config.simulation_mode {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            std::thread::sleep(std::time::Duration::from_millis(100));
             return LegResult {
                 success: true,
                 price: signal.cex_price * dec!(1.0001),
@@ -349,7 +301,8 @@ impl Executor {
         let amount_f64 = size.to_string().parse::<f64>().unwrap_or(0.0);
         let price_f64 = (signal.cex_price * dec!(1.001)).to_string().parse::<f64>().unwrap_or(0.0);
 
-        match self.exchange.create_limit_ioc_order(&signal.pair, side, amount_f64, price_f64) {
+        let exchange = self.exchange.lock().unwrap();
+        match exchange.create_limit_ioc_order(&signal.pair, side, amount_f64, price_f64) {
             Ok(result) => LegResult {
                 success: result.status == "filled",
                 price: result.avg_fill_price,
@@ -370,9 +323,9 @@ impl Executor {
     }
 
     /// Execute DEX leg (simulation stub).
-    async fn _execute_dex_leg(&self, signal: &Signal, size: Decimal) -> LegResult {
+    fn _execute_dex_leg(&self, signal: &Signal, size: Decimal) -> LegResult {
         if self.config.simulation_mode {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            std::thread::sleep(std::time::Duration::from_millis(500));
             return LegResult {
                 success: true,
                 price: signal.dex_price * dec!(0.9998),
@@ -391,9 +344,9 @@ impl Executor {
     }
 
     /// Unwind position (simulation stub).
-    async fn _unwind(&self, _ctx: &ExecutionContext) {
+    fn _unwind(&self, _ctx: &ExecutionContext) {
         if self.config.simulation_mode {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            std::thread::sleep(std::time::Duration::from_millis(100));
             return;
         }
 

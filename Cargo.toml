@@ -27,6 +27,8 @@ uuid = { version = "1.11", features = ["v4"] }
 futures-util = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+log = "0.4"
+env_logger = "0.11"
 
 
 [dev-dependencies]
@@ -65,9 +67,9 @@ name = "pnl_cli"
 path = "scripts/pnl_cli.rs"
 
 [[bin]]
-name = "arb_checker_cli"
+name = "arb_checker"
 path = "scripts/arb_checker_cli.rs"
 
 [[bin]]
-name = "arb_checker"
-path = "scripts/arb_checker_cli.rs"
+name = "arb_bot"
+path = "scripts/arb_bot.rs"
