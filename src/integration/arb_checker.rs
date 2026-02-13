@@ -11,6 +11,7 @@ use crate::pricing::PricingEngine;
 use crate::exchange::ExchangeClient;
 use crate::inventory::{InventoryTracker, Venue};
 use crate::inventory::PnLEngine;
+use crate::pricing::UniswapV2Pair;
 use thiserror::Error;
 
 
@@ -75,10 +76,10 @@ impl ArbChecker {
         // Lock exchange to fetch order book
         let exchange = self.exchange_client.lock().unwrap();
         let order_book = exchange.fetch_order_book(pair, 100).map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?;
+        let cex_fee_bps = exchange.get_trading_fees(pair).map_err(|_| ArbCheckerError::InvalidExchangeClient(pair.to_string()))?.taker;
         drop(exchange); // Release lock
 
         let analyzer = OrderBookAnalyzer::new(order_book);
-        let cex_result = analyzer.walk_the_book(OrderSide::Buy, amount).map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?;
 
         let dex_token0 = if token0_symbol == "ETH" { "WETH" } else { token0_symbol };
         let dex_token1 = if token1_symbol == "ETH" { "WETH" } else { token1_symbol };
@@ -91,6 +92,21 @@ impl ArbChecker {
         // Clone the pair so we can release the lock
         let uniswap2pair = uniswap2pair.clone();
         drop(pricing); // Release lock
+
+        self._calculate_swap(pair, amount, &analyzer, &uniswap2pair, cex_fee_bps, (token0_symbol, token1_symbol))
+    }
+
+    fn _calculate_swap(
+        &self,
+        pair: &str,
+        amount: Decimal,
+        analyzer: &OrderBookAnalyzer,
+        uniswap2pair: &UniswapV2Pair,
+        cex_fee_bps: Decimal,
+        token_symbols: (&str, &str),
+    ) -> Result<OpportunitySwap, ArbCheckerError> {
+        let (token0_symbol, token1_symbol) = token_symbols;
+        let dex_token0 = if token0_symbol == "ETH" { "WETH" } else { token0_symbol };
 
         let (input_token, _output_token) = if uniswap2pair.token0.token.symbol().unwrap_or_default() == dex_token0 {
             (&uniswap2pair.token0.token, &uniswap2pair.token1.token)
@@ -131,14 +147,9 @@ impl ArbChecker {
             .map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?
             .avg_price;
 
+        let cex_result = analyzer.walk_the_book(OrderSide::Buy, amount).map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?;
         let cex_bid = cex_result.avg_price;
 
-        let exchange = self.exchange_client.lock().unwrap();
-        let cex_fee_bps = exchange
-            .get_trading_fees(pair)
-            .map_err(|_| ArbCheckerError::InvalidExchangeClient(pair.to_string()))?
-            .taker;
-        drop(exchange);
 
         let decimals_in = input_token.decimals as u32;
         let decimals_out = if input_token == &uniswap2pair.token0.token {
@@ -213,10 +224,7 @@ impl ArbChecker {
             details: OpportunitySwapDetails {
                 dex_slippage_impact_bps: dex_slippage_impact_bps,
                 cex_slippage_bps: cex_result.slippage_bps,
-                cex_fee_bps: {
-                    let exchange = self.exchange_client.lock().unwrap();
-                    exchange.get_trading_fees(pair).map_err(|_| ArbCheckerError::InvalidExchangeClient(pair.to_string()))?.taker
-                },
+                cex_fee_bps,
                 dex_fee_bps: Decimal::from(uniswap2pair.fee_bps),
                 gas_cost_bps: gas_cost_bps,
                 gas_cost_usd: gas_cost_usd,
@@ -226,16 +234,46 @@ impl ArbChecker {
     }
 
     pub fn check(&self, pair: &str) -> Result<Option<OpportunitySwap>, ArbCheckerError> {
+        let (token0_symbol, token1_symbol) = pair.split_once('/').ok_or(ArbCheckerError::InvalidPair(pair.to_string()))?;
+
+        // 1. Fetch data ONCE
+        let exchange = self.exchange_client.lock().unwrap();
+        let order_book = exchange.fetch_order_book(pair, 100).map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?;
+        let cex_fee_bps = exchange.get_trading_fees(pair).map_err(|_| ArbCheckerError::InvalidExchangeClient(pair.to_string()))?.taker;
+        drop(exchange); 
+
+        let analyzer = OrderBookAnalyzer::new(order_book);
+
+        let dex_token0 = if token0_symbol == "ETH" { "WETH" } else { token0_symbol };
+        let dex_token1 = if token1_symbol == "ETH" { "WETH" } else { token1_symbol };
+
+        let pricing = self.pricing_engine.lock().unwrap();
+        let uniswap2pair = pricing.get_pair_by_symbols(dex_token0, dex_token1)
+            .ok_or(ArbCheckerError::InvalidPair(pair.to_string()))?;
+        let uniswap2pair = uniswap2pair.clone();
+        drop(pricing);
+
+        // 2. Loop with cached data
         let amounts = (0..50).map(|i| (2u128.pow(i)) * 10000).collect::<Vec<u128>>();
         let mut swaps = Vec::new();
         for amount in amounts {
-            let swap = self.opportunity_swap_by_amount(pair, Decimal::from(amount))?;
+            let swap = self._calculate_swap(pair, Decimal::from(amount), &analyzer, &uniswap2pair, cex_fee_bps, (token0_symbol, token1_symbol))?;
             if swap.executable {
                 swaps.push(swap);
             }
         }
         
         if swaps.is_empty() {
+            // Log best non-profitable gap for debugging/visibility
+            let best_gap_swap = (0..5).map(|i| (2u128.pow(i)) * 10000)
+                .map(|amount| self._calculate_swap(pair, Decimal::from(amount), &analyzer, &uniswap2pair, cex_fee_bps, (token0_symbol, token1_symbol)))
+                .filter_map(Result::ok)
+                .max_by_key(|s| s.gap_bps);
+            
+            if let Some(s) = best_gap_swap {
+                println!("  Best gap for {}: {:.2} bps (needs > 0 bps + costs)", pair, s.gap_bps);
+            }
+            
             return Ok(None);
         }
 

@@ -174,10 +174,15 @@ impl ArbBot {
 
         // Process each pair
         for pair in self.config.pairs.clone() {
+            println!("Checking {}...", pair);
+            
             // Generate signal
             let signal = match self.generator.generate(&pair) {
                 Some(s) => s,
-                None => continue,
+                None => {
+                    println!("No profitable path found for {}", pair);
+                    continue;
+                }
             };
 
             // Score signal (pass empty slice since scorer handles inventory internally if needed)
