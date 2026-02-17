@@ -214,6 +214,20 @@ impl PricingEngine {
         tokens
     }
 
+    pub fn get_tokens_with_addresses(&self) -> Vec<(Token, Address)> {
+        let mut seen = HashSet::new();
+        let mut tokens = Vec::new();
+        for pool in self.pools.values() {
+            if seen.insert(pool.token0.address.clone()) {
+                tokens.push((pool.token0.token.clone(), pool.token0.address.clone()));
+            }
+            if seen.insert(pool.token1.address.clone()) {
+                tokens.push((pool.token1.token.clone(), pool.token1.address.clone()));
+            }
+        }
+        tokens
+    }
+
     pub fn get_token_by_symbol(&self, symbol: &str) -> Option<Token> {
         for token in self.pool_tokens() {
             if token.symbol().unwrap_or_default() == symbol {

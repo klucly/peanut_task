@@ -13,9 +13,16 @@ use tokio::signal;
 fn main() {
     // Initialize environment and logging
     dotenvy::dotenv().ok();
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_secs()
-        .init();
+
+    // Initialize tracing subscriber
+    let subscriber = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into()),
+        )
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     // Parse command line arguments
     let args: Vec<String> = env::args().collect();
@@ -243,6 +250,17 @@ fn main() {
     log::info!("Tick interval: {}s", tick_interval);
     log::info!("═══════════════════════════════════════════");
 
+    // Initialize wallet
+    let wallet_key = env::var("ETH_PRIVATE_KEY").unwrap_or_else(|_| {
+        // Default Anvil key (Account 0) if not set
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()
+    });
+    let wallet_manager =
+        peanut_task::core::wallet_manager::WalletManager::from_hex_string(&wallet_key)
+            .expect("Invalid private key");
+    let wallet_address = wallet_manager.address();
+    tracing::info!("Bot Wallet Address: {}", wallet_address);
+
     // Create bot
     let mut bot = ArbBot::new(
         exchange,
@@ -250,6 +268,8 @@ fn main() {
         inventory,
         fee_structure,
         bot_config,
+        chain_client.clone(),
+        wallet_address,
     );
 
     // Setup Ctrl+C handler

@@ -1,5 +1,6 @@
 use ccxt_rust::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal_macros::dec;
 use std::sync::{Arc, Mutex};
 use time::OffsetDateTime;
 
@@ -33,6 +34,7 @@ pub struct OpportunitySwap {
     pub estimated_costs_bps: Decimal,
     pub estimated_net_pnl_bps: Decimal,
     pub inventory_ok: bool,
+    pub inventory_reason: Option<String>,
     pub executable: bool,
     pub details: OpportunitySwapDetails,
 }
@@ -175,16 +177,17 @@ impl ArbChecker {
 
                 // CEX Ask (Buy price)
                 let cex_ask = analyzer
-                    .walk_the_book(OrderSide::Sell, amount)
+                    .walk_the_book(OrderSide::Buy, amount)
                     .map(|r| r.avg_price)
                     .unwrap_or(Decimal::MAX);
 
                 // Gap: (DEX Sell Price - CEX Buy Price) / CEX Buy Price
-                let gap_bps = if cex_ask > Decimal::ZERO && cex_ask != Decimal::MAX {
+                let gap_ratio = if cex_ask > Decimal::ZERO && cex_ask != Decimal::MAX {
                     (dex_price - cex_ask) / cex_ask
                 } else {
                     Decimal::from(-1)
                 };
+                let gap_bps = gap_ratio * Decimal::from(10_000);
 
                 // Costs
                 let dex_slippage_bps = uniswap2pair
@@ -195,7 +198,7 @@ impl ArbChecker {
                 let estimated_costs_bps =
                     cex_fee_bps + dex_fee_bps + gas_cost_bps + dex_slippage_bps; // + cex_slippage
 
-                let pnl_bps = (gap_bps * Decimal::from(10000)) - estimated_costs_bps;
+                let pnl_bps = gap_bps - estimated_costs_bps;
 
                 let swap = OpportunitySwap {
                     pair: pair.to_string(),
@@ -209,7 +212,8 @@ impl ArbChecker {
                     estimated_costs_bps,
                     estimated_net_pnl_bps: pnl_bps,
                     inventory_ok: true, // Check later
-                    executable: false,  // Check later
+                    inventory_reason: None,
+                    executable: false, // Check later
                     details: OpportunitySwapDetails {
                         dex_slippage_impact_bps: dex_slippage_bps,
                         cex_slippage_bps: Decimal::ZERO,
@@ -245,16 +249,17 @@ impl ArbChecker {
 
                 // CEX Bid (Sell price)
                 let cex_bid = analyzer
-                    .walk_the_book(OrderSide::Buy, amount)
+                    .walk_the_book(OrderSide::Sell, amount)
                     .map(|r| r.avg_price)
                     .unwrap_or(Decimal::ZERO);
 
                 // Gap: (CEX Sell Price - DEX Buy Price) / DEX Buy Price
-                let gap_bps = if dex_price > Decimal::ZERO {
+                let gap_ratio = if dex_price > Decimal::ZERO {
                     (cex_bid - dex_price) / dex_price
                 } else {
                     Decimal::ZERO
                 };
+                let gap_bps = gap_ratio * Decimal::from(10_000);
 
                 // Costs
                 // Slippage logic for get_amount_in is different, usually included in price impact?
@@ -264,7 +269,7 @@ impl ArbChecker {
                 let gas_cost_bps = Decimal::from(20);
                 let estimated_costs_bps = cex_fee_bps + dex_fee_bps + gas_cost_bps;
 
-                let pnl_bps = (gap_bps * Decimal::from(10000)) - estimated_costs_bps;
+                let pnl_bps = gap_bps - estimated_costs_bps;
 
                 let swap = OpportunitySwap {
                     pair: pair.to_string(),
@@ -278,6 +283,7 @@ impl ArbChecker {
                     estimated_costs_bps,
                     estimated_net_pnl_bps: pnl_bps,
                     inventory_ok: true,
+                    inventory_reason: None,
                     executable: false,
                     details: OpportunitySwapDetails {
                         dex_slippage_impact_bps: dex_slippage_bps,
@@ -333,6 +339,7 @@ impl ArbChecker {
         drop(inventory);
 
         swap.inventory_ok = inventory_check.can_execute;
+        swap.inventory_reason = inventory_check.reason;
         swap.executable = swap.inventory_ok && swap.estimated_net_pnl_bps > Decimal::ZERO;
 
         Ok(swap)
@@ -374,49 +381,81 @@ impl ArbChecker {
         let uniswap2pair = uniswap2pair.clone();
         drop(pricing);
 
-        // 2. Loop with cached data
-        let amounts = (0..50)
-            .map(|i| (2u128.pow(i)) * 10000)
-            .collect::<Vec<u128>>();
+        // 2. Loop with cached data - OPTIMIZED STEPS
+        // Instead of 50 exponential steps, we check a more targeted range
+        // From ~0.01 ETH to ~100 ETH equivalent (assuming base near 18 decimals)
+        // 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 20, 50, 100
+        let amounts_decimal = vec![
+            dec!(0.01),
+            dec!(0.05),
+            dec!(0.1),
+            dec!(0.5),
+            dec!(1),
+            dec!(2),
+            dec!(5),
+            dec!(10),
+            dec!(20),
+            dec!(50),
+            dec!(100),
+        ];
+
         let mut swaps = Vec::new();
-        for amount in amounts {
-            let swap = self._calculate_swap(
+        let mut best_rejected_swap: Option<OpportunitySwap> = None;
+        let mut best_rejected_reason: Option<String> = None;
+
+        for amount in &amounts_decimal {
+            let swap_res = self._calculate_swap(
                 pair,
-                Decimal::from(amount),
+                *amount,
                 &analyzer,
                 &uniswap2pair,
                 cex_fee_bps,
                 (token0_symbol, token1_symbol),
-            )?;
-            if swap.executable {
-                swaps.push(swap);
+            );
+
+            match swap_res {
+                Ok(swap) => {
+                    if swap.executable {
+                        swaps.push(swap);
+                    } else {
+                        // Track the "best" rejected swap based on PnL
+                        match best_rejected_swap {
+                            Some(ref current_best) => {
+                                if swap.estimated_net_pnl_bps > current_best.estimated_net_pnl_bps {
+                                    best_rejected_swap = Some(swap.clone());
+                                    best_rejected_reason = swap.inventory_reason.clone();
+                                }
+                            }
+                            None => {
+                                best_rejected_reason = swap.inventory_reason.clone();
+                                best_rejected_swap = Some(swap);
+                            }
+                        }
+                    }
+                }
+                Err(_) => {} // Ignore errors in loop
             }
         }
 
         if swaps.is_empty() {
-            // Log best non-profitable gap for debugging/visibility
-            let best_gap_swap = (0..5)
-                .map(|i| (2u128.pow(i)) * 10000)
-                .map(|amount| {
-                    self._calculate_swap(
-                        pair,
-                        Decimal::from(amount),
-                        &analyzer,
-                        &uniswap2pair,
-                        cex_fee_bps,
-                        (token0_symbol, token1_symbol),
-                    )
-                })
-                .filter_map(Result::ok)
-                .max_by_key(|s| s.gap_bps);
-
-            if let Some(s) = best_gap_swap {
-                println!(
-                    "  Best gap for {}: {:.2} bps (needs > 0 bps + costs)",
-                    pair, s.gap_bps
+            if let Some(rejected) = best_rejected_swap {
+                tracing::info!(
+                    "No executable swaps for {}. Best Rejected: Amount: {}, Direction: {:?}, PnL: {:.2} bps, Inventory OK: {}, Executable: {}. Reason: {}",
+                    pair,
+                    rejected.amount,
+                    rejected.direction,
+                    rejected.estimated_net_pnl_bps,
+                    rejected.inventory_ok,
+                    rejected.executable,
+                    best_rejected_reason.unwrap_or_default()
+                );
+            } else {
+                tracing::info!(
+                    "No executable swaps found for {}. Checked {} amounts. No valid candidates.",
+                    pair,
+                    amounts_decimal.len()
                 );
             }
-
             return Ok(None);
         }
 
@@ -424,6 +463,19 @@ impl ArbChecker {
             .iter()
             .max_by_key(|swap| swap.estimated_net_pnl_bps)
             .unwrap();
+
+        tracing::info!(
+            "Best swap for {}: Amount: {}, Direction: {:?}, Gap: {:.2} bps, Est PnL: {:.2} bps. DEX Price: {:.2}, CEX Bid: {:.2}, CEX Ask: {:.2}",
+            pair,
+            max_swap.amount,
+            max_swap.direction,
+            max_swap.gap_bps,
+            max_swap.estimated_net_pnl_bps,
+            max_swap.dex_price,
+            max_swap.cex_bid,
+            max_swap.cex_ask
+        );
+
         Ok(Some(max_swap.clone()))
     }
     /// Access the exchange client.

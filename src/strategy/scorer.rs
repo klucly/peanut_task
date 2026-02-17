@@ -72,6 +72,17 @@ impl SignalScorer {
             + history_score * self.config.history_weight;
 
         let clamped = weighted.max(dec!(0)).min(dec!(100));
+
+        tracing::trace!(
+            "Score for {}: Total={:.1} (Spread={:.1}, Liq={:.1}, Inv={:.1}, Hist={:.1})",
+            signal.pair,
+            clamped,
+            spread_score,
+            liquidity_score,
+            inventory_score,
+            history_score
+        );
+
         round_to_one_decimal(clamped)
     }
 
@@ -85,24 +96,20 @@ impl SignalScorer {
 
         let range_bps = self.config.excellent_spread_bps - self.config.min_spread_bps;
         let spread_above_min = spread_bps - self.config.min_spread_bps;
-        
+
         (spread_above_min / range_bps) * dec!(100)
     }
 
     fn _score_inventory(&self, signal: &Signal, skews: &[SkewResult]) -> Decimal {
         let base = signal.pair.split('/').next().unwrap_or("");
-        let needs_rebalance = skews.iter()
-            .any(|s| s.asset == base && s.needs_rebalance);
+        let needs_rebalance = skews.iter().any(|s| s.asset == base && s.needs_rebalance);
 
-        if needs_rebalance {
-            dec!(20)
-        } else {
-            dec!(60)
-        }
+        if needs_rebalance { dec!(20) } else { dec!(60) }
     }
 
     fn _score_history(&self, pair: &str) -> Decimal {
-        let relevant_results: Vec<bool> = self.recent_results
+        let relevant_results: Vec<bool> = self
+            .recent_results
             .iter()
             .rev()
             .take(20)
@@ -116,15 +123,16 @@ impl SignalScorer {
 
         let successes = relevant_results.iter().filter(|&&s| s).count();
         let total = relevant_results.len();
-        
+
         Decimal::from(successes * 100) / Decimal::from(total)
     }
 
     pub fn record_result(&mut self, pair: String, success: bool) {
         self.recent_results.push((pair, success));
-        
+
         if self.recent_results.len() > 100 {
-            self.recent_results = self.recent_results
+            self.recent_results = self
+                .recent_results
                 .iter()
                 .skip(self.recent_results.len() - 100)
                 .cloned()
@@ -133,12 +141,10 @@ impl SignalScorer {
     }
 
     pub fn apply_decay(&self, signal: &Signal) -> Decimal {
-        let age = Decimal::from_f64_retain(signal.age_seconds())
-            .unwrap_or(dec!(0));
-        
+        let age = Decimal::from_f64_retain(signal.age_seconds()).unwrap_or(dec!(0));
+
         let ttl = (signal.expiry - signal.timestamp).as_seconds_f64();
-        let ttl_decimal = Decimal::from_f64_retain(ttl)
-            .unwrap_or(dec!(1));
+        let ttl_decimal = Decimal::from_f64_retain(ttl).unwrap_or(dec!(1));
 
         if ttl_decimal <= dec!(0) {
             return dec!(0);

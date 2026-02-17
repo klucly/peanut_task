@@ -2,9 +2,9 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use time::{Duration, OffsetDateTime};
 
-use crate::integration::arb_checker::ArbChecker;
 use super::fees::FeeStructure;
 use super::signal::{Direction, Signal};
+use crate::integration::arb_checker::ArbChecker;
 
 #[derive(Debug, Clone)]
 pub struct GeneratorConfig {
@@ -64,35 +64,86 @@ impl SignalGenerator {
 
     pub fn generate(&mut self, pair: &str) -> Option<Signal> {
         if self.in_cooldown(pair) {
+            tracing::debug!("Skipping {} due to cooldown", pair);
             return None;
         }
 
         let opportunity = match self.arb_checker.check(pair) {
             Ok(Some(opp)) => opp,
-            _ => return None,
+            Ok(None) => {
+                tracing::debug!("No opportunity found for {}", pair);
+                return None;
+            }
+            Err(e) => {
+                tracing::warn!("Error checking {}: {}", pair, e);
+                return None;
+            }
         };
 
         if !opportunity.executable {
+            tracing::debug!("Opportunity for {} not executable (inventory/profit)", pair);
             return None;
         }
 
         let direction = match opportunity.direction {
-            crate::integration::arb_checker::ExchangeTypeDirection::BuyCexSellDex => Direction::BuyCexSellDex,
-            crate::integration::arb_checker::ExchangeTypeDirection::BuyDexSellCex => Direction::BuyDexSellCex,
+            crate::integration::arb_checker::ExchangeTypeDirection::BuyCexSellDex => {
+                Direction::BuyCexSellDex
+            }
+            crate::integration::arb_checker::ExchangeTypeDirection::BuyDexSellCex => {
+                Direction::BuyDexSellCex
+            }
         };
+
+        // Price to use for USD valuation and for the Signal
+        let cex_price_ref = match direction {
+            Direction::BuyCexSellDex => opportunity.cex_ask,
+            Direction::BuyDexSellCex => opportunity.cex_bid,
+        };
+
+        // Safety check: if price is 0, we can't trade
+        if cex_price_ref <= Decimal::ZERO {
+            tracing::warn!("Signals generated with zero CEX price for {}", pair);
+            return None;
+        }
 
         let now = OffsetDateTime::now_utc();
         let expiry = now + Duration::seconds(self.config.signal_ttl_seconds);
-        
-        let trade_value_usd = (opportunity.amount * opportunity.cex_ask) / Decimal::from(10_000_000_000_000_000_000u128);
+
+        // Calculate USD stats using the relevant CEX price
+        let trade_value_usd = opportunity.amount * cex_price_ref;
         let gross_pnl = (opportunity.gap_bps / Decimal::from(10_000)) * trade_value_usd;
         let fees = (opportunity.estimated_costs_bps / Decimal::from(10_000)) * trade_value_usd;
         let net_pnl = gross_pnl - fees;
-        
+
+        // Check configured limits
+        // Check configured limits
+        if net_pnl < self.config.min_profit_usd {
+            tracing::info!(
+                "Skipping {}: Net PnL ${:.2} < Min Profit ${:.2}. Trade Value: ${:.2}, Gross: ${:.2}, Fees: ${:.2}",
+                pair,
+                net_pnl,
+                self.config.min_profit_usd,
+                trade_value_usd,
+                gross_pnl,
+                fees
+            );
+            return None;
+        }
+
+        if trade_value_usd > self.config.max_position_usd {
+            tracing::info!(
+                "Skipping {}: Trade Value ${:.2} > Max Position ${:.2}",
+                pair,
+                trade_value_usd,
+                self.config.max_position_usd
+            );
+            return None;
+        }
+
         let signal = Signal::create(
             pair.to_string(),
             direction,
-            opportunity.cex_ask,
+            cex_price_ref, // Pass the correct price (ask or bid)
             opportunity.dex_price,
             opportunity.gap_bps,
             opportunity.amount,
@@ -103,6 +154,15 @@ impl SignalGenerator {
             expiry,
             opportunity.inventory_ok,
             opportunity.executable,
+        );
+
+        tracing::info!(
+            "SIGNAL GENERATED: {} {:?} Amount: {}. Net PnL: ${:.2}. Expiry: {}",
+            pair,
+            direction,
+            opportunity.amount,
+            net_pnl,
+            expiry
         );
 
         self.last_signal_time.insert(pair.to_string(), now);
