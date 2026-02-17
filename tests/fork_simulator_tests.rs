@@ -52,11 +52,15 @@ fn test_path_addresses_single_hop() {
         token0(),
         token1(),
         1000,
-        2000,
+        1000,
+        0,
         30,
     );
-    let route = Route::new(vec![pair], vec![token0().token.clone(), token1().token.clone()])
-        .unwrap();
+    let route = Route::new(
+        vec![pair],
+        vec![token0().token.clone(), token1().token.clone()],
+    )
+    .unwrap();
     let addrs = route.path_addresses();
     assert_eq!(addrs.len(), 2);
     assert_eq!(addrs[0], token0().address);
@@ -77,6 +81,7 @@ fn test_path_addresses_multi_hop() {
         t1.clone(),
         1000,
         2000,
+        0, // Added block_timestamp_last
         30,
     );
     let pool1 = UniswapV2Pair::new(
@@ -85,6 +90,7 @@ fn test_path_addresses_multi_hop() {
         t2.clone(),
         2000,
         3000,
+        0, // Added block_timestamp_last
         30,
     );
     let route = Route::new(
@@ -112,8 +118,13 @@ fn test_swap_params_validation() {
         to: sender.clone(),
         deadline: u64::MAX,
     };
-    let err = sim.simulate_swap(&router, &invalid_params, &sender).unwrap_err();
-    assert!(matches!(err, peanut_task::pricing::ForkSimulatorError::InvalidParams(_)));
+    let err = sim
+        .simulate_swap(&router, &invalid_params, &sender)
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        peanut_task::pricing::ForkSimulatorError::InvalidParams(_)
+    ));
 }
 
 #[test]
@@ -121,7 +132,10 @@ fn test_fork_simulator_new_invalid_url() {
     let result = ForkSimulator::new("not-a-valid-url", Chain::EthereumMainnet);
     assert!(result.is_err());
     if let Err(e) = result {
-        assert!(matches!(e, peanut_task::pricing::ForkSimulatorError::RpcUrl(_)));
+        assert!(matches!(
+            e,
+            peanut_task::pricing::ForkSimulatorError::RpcUrl(_)
+        ));
     }
 }
 

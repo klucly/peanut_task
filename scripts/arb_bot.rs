@@ -1,15 +1,15 @@
 use std::env;
 
-use rust_decimal::Decimal;
-use tokio::signal;
 use peanut_task::{
-    ExchangeClient, ExchangeConfig, InventoryTracker, Venue,
+    ArbBot, BotConfig, ExchangeClient, ExchangeConfig, FeeStructure, GeneratorConfig,
+    InventoryTracker, ScorerConfig, Venue,
     chain::{ChainClient, RpcUrl},
     core::utility::Address,
     pricing::{Chain, PricingEngine},
     strategy::ExecutorConfig,
-    ArbBot, BotConfig, GeneratorConfig, ScorerConfig, FeeStructure,
 };
+use rust_decimal::Decimal;
+use tokio::signal;
 fn main() {
     // Initialize environment and logging
     dotenvy::dotenv().ok();
@@ -19,11 +19,11 @@ fn main() {
 
     // Parse command line arguments
     let args: Vec<String> = env::args().collect();
-    let mut pairs = vec!["ETH/USDT".to_string()];
+    let mut pairs = vec!["ETH/USDC".to_string()];
     let mut simulation_mode = true;
     let mut min_score = Decimal::from(60);
     let mut tick_interval = 1u64;
-    
+
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -44,7 +44,8 @@ fn main() {
             }
             "--min-score" => {
                 if i + 1 < args.len() {
-                    min_score = args[i + 1].parse::<f64>()
+                    min_score = args[i + 1]
+                        .parse::<f64>()
                         .map(Decimal::try_from)
                         .ok()
                         .and_then(Result::ok)
@@ -67,32 +68,145 @@ fn main() {
         i += 1;
     }
 
-    // Initialize RPC client (blocking)
-    let infura_key = env::var("INFURA_API_KEY").expect("INFURA_API_KEY not set");
-    let rpc_urls = vec![
-        RpcUrl::new("https://mainnet.infura.io/v3/{}", &infura_key).unwrap()
-    ];
+    // Initialize RPC client
+    let rpc_urls = if simulation_mode {
+        vec![RpcUrl::new("http://127.0.0.1:8545/?key={}", "dummy").expect("Invalid RPC URL")]
+    } else {
+        let infura_key = env::var("INFURA_API_KEY").expect("INFURA_API_KEY not set");
+        vec![RpcUrl::new("https://mainnet.infura.io/v3/{}", &infura_key).unwrap()]
+    };
     let chain_client = ChainClient::new(rpc_urls, 30, 3).unwrap();
 
     // Initialize pricing engine (blocking)
     let mut pricing_engine = PricingEngine::new(
-        chain_client,
+        chain_client.clone(),
         "http://127.0.0.1:8545",
-        "ws://127.0.0.1:8546",
+        "ws://127.0.0.1:8545",
         Chain::EthereumMainnet,
         Some(Address::from_string("0x0000000000000000000000000000000000000000").unwrap()),
-    ).expect("Failed to create pricing engine");
+    )
+    .expect("Failed to create pricing engine");
+
+    // Define token map (Symbol -> Address)
+    // In a real bot this would be loaded from config file or token list API
+    let mut token_map = std::collections::HashMap::new();
+    token_map.insert(
+        "ETH".to_string(),
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    ); // WETH
+    token_map.insert(
+        "WETH".to_string(),
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    );
+    token_map.insert(
+        "USDC".to_string(),
+        "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    );
+    token_map.insert(
+        "USDT".to_string(),
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    );
+    token_map.insert(
+        "DAI".to_string(),
+        "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    );
+    token_map.insert(
+        "WBTC".to_string(),
+        "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    );
+
+    let factory_address =
+        Address::from_string("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f").unwrap();
+
+    // Resolve pool addresses dynamically
+    let mut pool_addresses = Vec::new();
+    let mut valid_pairs = Vec::new();
+
+    for pair_str in &pairs {
+        if let Some((base, quote)) = pair_str.split_once('/') {
+            let base_addr_str = token_map.get(base).or_else(|| token_map.get("WETH")); // Default to WETH if base is ETH
+            let quote_addr_str = token_map.get(quote);
+
+            if let (Some(base_addr), Some(quote_addr)) = (base_addr_str, quote_addr_str) {
+                // Call Factory.getPair(tokenA, tokenB)
+                // getPair selector: 0xe6a43905
+                // input: address (pad to 32), address (pad to 32)
+
+                // Construct call data manually or use a helper if available.
+                // Since we don't have a generated ABI wrapper, constructing manually.
+                let mut data = Vec::with_capacity(4 + 32 + 32);
+                data.extend_from_slice(&hex::decode("e6a43905").unwrap());
+
+                let t0 = Address::from_string(base_addr).unwrap();
+                let t1 = Address::from_string(quote_addr).unwrap();
+
+                // ABI Encode: pad addresses to 32 bytes
+                let mut t0_pad = [0u8; 32];
+                let t0_bytes = hex::decode(&t0.value[2..]).unwrap(); // Skip 0x
+                t0_pad[12..32].copy_from_slice(&t0_bytes);
+
+                let mut t1_pad = [0u8; 32];
+                let t1_bytes = hex::decode(&t1.value[2..]).unwrap(); // Skip 0x
+                t1_pad[12..32].copy_from_slice(&t1_bytes);
+
+                data.extend_from_slice(&t0_pad);
+                data.extend_from_slice(&t1_pad);
+
+                let tx = peanut_task::core::base_types::Transaction {
+                    from: None,
+                    to: factory_address.clone(),
+                    value: peanut_task::core::base_types::TokenAmount::native_eth(0),
+                    data,
+                    nonce: None,
+                    gas_limit: None,
+                    max_fee_per_gas: None,
+                    max_priority_fee: None,
+                    chain_id: 1,
+                };
+
+                match chain_client.call(&tx, "latest") {
+                    Ok(result) => {
+                        if result.len() >= 32 {
+                            let addr_bytes = &result[12..32];
+                            let pair_address =
+                                Address::from_string(&format!("0x{}", hex::encode(addr_bytes)))
+                                    .unwrap();
+
+                            if pair_address
+                                != Address::from_string(
+                                    "0x0000000000000000000000000000000000000000",
+                                )
+                                .unwrap()
+                            {
+                                log::info!("Found pool for {}: {}", pair_str, pair_address);
+                                pool_addresses.push(pair_address);
+                                valid_pairs.push(pair_str.clone());
+                            } else {
+                                log::warn!("Factory returned zero address for {}", pair_str);
+                            }
+                        }
+                    }
+                    Err(e) => log::error!("Failed to resolve pool for {}: {}", pair_str, e),
+                }
+            } else {
+                log::warn!("Unknown token in pair {}", pair_str);
+            }
+        }
+    }
+
+    if pool_addresses.is_empty() {
+        log::error!("No valid pools found. Exiting.");
+        return;
+    }
 
     // Load pools (blocking)
-    let pair_address = Address::from_string("0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852").unwrap();
-    pricing_engine.load_pools(&[pair_address])
+    pricing_engine
+        .load_pools(&pool_addresses)
         .expect("Failed to load pools");
 
     // Initialize exchange client (blocking)
-    let exchange_config = ExchangeConfig::from_env()
-        .expect("Failed to load exchange config");
-    let exchange = ExchangeClient::new(exchange_config)
-        .expect("Failed to create exchange client");
+    let exchange_config = ExchangeConfig::from_env().expect("Failed to load exchange config");
+    let exchange = ExchangeClient::new(exchange_config).expect("Failed to create exchange client");
 
     // Initialize inventory tracker (blocking)
     let inventory = InventoryTracker::new(vec![Venue::Binance, Venue::Wallet])
@@ -103,15 +217,15 @@ fn main() {
 
     // Create bot configuration
     let executor_config = ExecutorConfig::new(
-        10,  // leg1_timeout_secs
-        10,  // leg2_timeout_secs
-        Decimal::try_from(0.98).unwrap(),  // min_fill_ratio
-        false,  // use_flashbots
+        10,                               // leg1_timeout_secs
+        10,                               // leg2_timeout_secs
+        Decimal::try_from(0.98).unwrap(), // min_fill_ratio
+        false,                            // use_flashbots
         simulation_mode,
     );
-    
+
     let bot_config = BotConfig::new(
-        pairs.clone(),
+        valid_pairs,
         tick_interval,
         min_score,
         simulation_mode,
@@ -140,7 +254,7 @@ fn main() {
 
     // Setup Ctrl+C handler
     let stop_handle = bot.stop_handle();
-    
+
     // Create runtime for async execution
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

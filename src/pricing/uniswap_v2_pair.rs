@@ -1,9 +1,9 @@
-use crate::core::base_types::{Address, TokenAmount, Token, Transaction};
 use crate::chain::ChainClient;
+use crate::core::base_types::{Address, Token, TokenAmount, Transaction};
 use alloy::primitives::U256;
 use hex;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
 
@@ -31,6 +31,7 @@ pub struct UniswapV2Pair {
     pub token1: TokenInPair,
     pub reserve0: u128,
     pub reserve1: u128,
+    pub block_timestamp_last: u32,
     pub fee_bps: u16,
 }
 
@@ -57,6 +58,7 @@ impl UniswapV2Pair {
         token1: TokenInPair,
         reserve0: u128,
         reserve1: u128,
+        block_timestamp_last: u32,
         fee_bps: u16,
     ) -> Self {
         Self {
@@ -65,11 +67,15 @@ impl UniswapV2Pair {
             token1,
             reserve0,
             reserve1,
+            block_timestamp_last,
             fee_bps,
         }
     }
 
-    pub fn get_amount_out(&self, amount_in: &TokenAmount) -> Result<TokenAmount, UniswapV2PairError> {
+    pub fn get_amount_out(
+        &self,
+        amount_in: &TokenAmount,
+    ) -> Result<TokenAmount, UniswapV2PairError> {
         let (reserve_in, reserve_out) = self.reserves_for_token(&amount_in.token)?;
         let amount_in_raw = amount_in.raw;
         let amount_in_with_fee = amount_in_raw
@@ -90,7 +96,10 @@ impl UniswapV2Pair {
         Ok(TokenAmount::new(raw_out, token_out))
     }
 
-    pub fn get_amount_in(&self, amount_out: &TokenAmount) -> Result<TokenAmount, UniswapV2PairError> {
+    pub fn get_amount_in(
+        &self,
+        amount_out: &TokenAmount,
+    ) -> Result<TokenAmount, UniswapV2PairError> {
         let (reserve_in, reserve_out) = self.reserves_for_token_out(&amount_out.token)?;
         let amount_out_raw = amount_out.raw;
         let reserve_out_sub_out = reserve_out
@@ -163,6 +172,7 @@ impl UniswapV2Pair {
             token1: self.token1.clone(),
             reserve0: new_reserve0,
             reserve1: new_reserve1,
+            block_timestamp_last: self.block_timestamp_last,
             fee_bps: self.fee_bps,
         })
     }
@@ -176,6 +186,7 @@ impl UniswapV2Pair {
         }
         let reserve0 = u128::from_be_bytes(array_from(&reserves[16..32]));
         let reserve1 = u128::from_be_bytes(array_from(&reserves[48..64]));
+        let block_timestamp_last = u32::from_be_bytes(array_from_u32(&reserves[92..96]));
 
         let token0_bytes = call_pair(client, &address, &selector("token0()"))?;
         let token1_bytes = call_pair(client, &address, &selector("token1()"))?;
@@ -203,6 +214,7 @@ impl UniswapV2Pair {
             TokenInPair::new(token1, token1_addr),
             reserve0,
             reserve1,
+            block_timestamp_last,
             30,
         ))
     }
@@ -217,6 +229,7 @@ impl UniswapV2Pair {
         }
         self.reserve0 = u128::from_be_bytes(array_from(&reserves[16..32]));
         self.reserve1 = u128::from_be_bytes(array_from(&reserves[48..64]));
+        self.block_timestamp_last = u32::from_be_bytes(array_from_u32(&reserves[92..96]));
         Ok(())
     }
 
@@ -267,6 +280,12 @@ fn array_from(slice: &[u8]) -> [u8; 16] {
     a
 }
 
+fn array_from_u32(slice: &[u8]) -> [u8; 4] {
+    let mut a = [0u8; 4];
+    a.copy_from_slice(slice);
+    a
+}
+
 fn address_from_slice(slice: &[u8]) -> String {
     format!("0x{}", hex::encode(slice))
 }
@@ -291,10 +310,7 @@ fn call_pair(
     Ok(client.call(&tx, "latest")?)
 }
 
-fn fetch_token(
-    client: &ChainClient,
-    token_addr: &Address,
-) -> Result<Token, UniswapV2PairError> {
+fn fetch_token(client: &ChainClient, token_addr: &Address) -> Result<Token, UniswapV2PairError> {
     let dec_bytes = call_pair(client, token_addr, &selector("decimals()"))?;
     let decimals = if dec_bytes.len() >= 32 {
         dec_bytes[31]
@@ -306,11 +322,13 @@ fn fetch_token(
     let sym_bytes = call_pair(client, token_addr, &selector("symbol()")).map_err(|e| {
         UniswapV2PairError::TokenMetadataUnavailable(format!("symbol() call failed: {}", e))
     })?;
-    let symbol = parse_abi_string(&sym_bytes).filter(|s| !s.is_empty()).ok_or_else(|| {
-        UniswapV2PairError::TokenMetadataUnavailable(
-            "symbol() returned missing or empty string".to_string(),
-        )
-    })?;
+    let symbol = parse_abi_string(&sym_bytes)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            UniswapV2PairError::TokenMetadataUnavailable(
+                "symbol() returned missing or empty string".to_string(),
+            )
+        })?;
     Ok(Token::new(decimals, Some(symbol)))
 }
 
@@ -320,7 +338,11 @@ fn parse_abi_string(data: &[u8]) -> Option<String> {
     }
     if data.len() == 32 {
         let s = std::str::from_utf8(data).ok()?.trim_end_matches('\0');
-        return if s.is_empty() { None } else { Some(s.to_string()) };
+        return if s.is_empty() {
+            None
+        } else {
+            Some(s.to_string())
+        };
     }
     let offset = read_u32_be(&data[0..32])? as usize;
     if data.len() < offset + 32 {

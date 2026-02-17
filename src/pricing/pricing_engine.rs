@@ -133,11 +133,22 @@ impl PricingEngine {
 
     /// Refresh a single pool's reserves from chain.
     pub fn refresh_pool(&mut self, address: &Address) -> Result<(), QuoteError> {
-        let pool = self
-            .pools
-            .get_mut(address)
-            .ok_or(QuoteError::PoolNotFound(address.clone()))?;
-        pool.refresh_reserves(&self.client)?;
+        self.refresh_pools(&[address.clone()])
+    }
+
+    /// Refresh multiple pools' reserves from chain.
+    pub fn refresh_pools(&mut self, addresses: &[Address]) -> Result<(), QuoteError> {
+        for address in addresses {
+            if let Some(pool) = self.pools.get_mut(address) {
+                if let Err(e) = pool.refresh_reserves(&self.client) {
+                    // Log error but continue refreshing others? or fail?
+                    // For now, let's log and continue to be robust.
+                    log::warn!("Failed to refresh pool {}: {}", address, e);
+                }
+            } else {
+                return Err(QuoteError::PoolNotFound(address.clone()));
+            }
+        }
         self.router = Some(RouteFinder::new(self.pools.values().cloned().collect()));
         Ok(())
     }
@@ -151,16 +162,13 @@ impl PricingEngine {
         gas_price_gwei: u64,
         max_hops: u32,
     ) -> Result<Quote, QuoteError> {
-        let router = self
-            .router
-            .as_ref()
-            .ok_or(QuoteError::NoPoolsLoaded)?;
+        let router = self.router.as_ref().ok_or(QuoteError::NoPoolsLoaded)?;
         let (route, net_output) = router
             .find_best_route(token_in, token_out, amount_in, gas_price_gwei, max_hops)?
             .ok_or(QuoteError::NoRoute)?;
-        let sim_result = self
-            .simulator
-            .simulate_route(&route, amount_in, &self.simulation_sender)?;
+        let sim_result =
+            self.simulator
+                .simulate_route(&route, amount_in, &self.simulation_sender)?;
         if !sim_result.success {
             return Err(QuoteError::SimulationFailed(
                 sim_result.error.unwrap_or_else(|| "unknown".to_string()),
@@ -219,8 +227,8 @@ impl PricingEngine {
         for pair in self.pools.values() {
             let token0_symbol = pair.token0.token.symbol().unwrap_or_default();
             let token1_symbol = pair.token1.token.symbol().unwrap_or_default();
-            if token0_symbol == symbol0 && token1_symbol == symbol1 ||
-                token0_symbol == symbol1 && token1_symbol == symbol0
+            if token0_symbol == symbol0 && token1_symbol == symbol1
+                || token0_symbol == symbol1 && token1_symbol == symbol0
             {
                 return Some(pair);
             }

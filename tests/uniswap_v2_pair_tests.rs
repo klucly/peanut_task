@@ -1,8 +1,6 @@
 use peanut_task::chain::{ChainClient, RpcUrl};
-use peanut_task::core::base_types::{Address, TokenAmount, Token};
-use peanut_task::pricing::{
-    Chain, Decimal, ForkSimulator, TokenInPair, UniswapV2Pair,
-};
+use peanut_task::core::base_types::{Address, Token, TokenAmount};
+use peanut_task::pricing::{Chain, Decimal, ForkSimulator, TokenInPair, UniswapV2Pair};
 
 fn pair_address() -> Address {
     Address::from_string("0x0000000000000000000000000000000000000000").unwrap()
@@ -30,7 +28,15 @@ fn usdc_token_in_pair() -> TokenInPair {
 }
 
 fn make_pair(reserve0: u128, reserve1: u128, fee_bps: u16) -> UniswapV2Pair {
-    UniswapV2Pair::new(pair_address(), token0(), token1(), reserve0, reserve1, fee_bps)
+    UniswapV2Pair::new(
+        pair_address(),
+        token0(),
+        token1(),
+        reserve0,
+        reserve1,
+        0,
+        fee_bps,
+    )
 }
 
 #[test]
@@ -41,12 +47,21 @@ fn test_get_amount_out_basic() {
         usdc_token_in_pair(),
         1000 * 10u128.pow(18),
         2_000_000 * 10u128.pow(6),
+        0,
         30,
     );
     let usdc_in = TokenAmount::new(2000 * 10u128.pow(6), usdc_token_in_pair().token.clone());
     let eth_out = pair.get_amount_out(&usdc_in).unwrap();
-    assert!(eth_out.raw < 10u128.pow(18), "expected less than 1 ETH, got {}", eth_out.raw);
-    assert!(eth_out.raw > 99 * 10u128.pow(16), "expected more than 0.99 ETH, got {}", eth_out.raw);
+    assert!(
+        eth_out.raw < 10u128.pow(18),
+        "expected less than 1 ETH, got {}",
+        eth_out.raw
+    );
+    assert!(
+        eth_out.raw > 99 * 10u128.pow(16),
+        "expected more than 0.99 ETH, got {}",
+        eth_out.raw
+    );
 }
 
 #[test]
@@ -105,7 +120,10 @@ fn test_get_spot_price_token0_in() {
     let pair = make_pair(1000, 2000, 30);
     let price = pair.get_spot_price(&pair.token0.token).unwrap();
     assert_eq!(price, Decimal::from(2u8));
-    assert_eq!((price * Decimal::from(100u64)).trunc(), Decimal::from(200u64));
+    assert_eq!(
+        (price * Decimal::from(100u64)).trunc(),
+        Decimal::from(200u64)
+    );
     assert_eq!(price.round_dp(8).to_string(), "2");
 }
 
@@ -114,7 +132,10 @@ fn test_get_spot_price_token1_in() {
     let pair = make_pair(1000, 2000, 30);
     let price = pair.get_spot_price(&pair.token1.token).unwrap();
     assert_eq!(price, Decimal::from(5u8) / Decimal::from(10u8));
-    assert_eq!((price * Decimal::from(100u64)).trunc(), Decimal::from(50u64));
+    assert_eq!(
+        (price * Decimal::from(100u64)).trunc(),
+        Decimal::from(50u64)
+    );
 }
 
 #[test]
@@ -122,7 +143,10 @@ fn test_get_execution_price() {
     let pair = make_pair(1000, 2000, 30);
     let amount_in = TokenAmount::new(100, pair.token0.token.clone());
     let price = pair.get_execution_price(&amount_in).unwrap();
-    assert_eq!((price * Decimal::from(100u64)).trunc(), Decimal::from(181u64));
+    assert_eq!(
+        (price * Decimal::from(100u64)).trunc(),
+        Decimal::from(181u64)
+    );
     assert_eq!(price.round_dp(2).to_string(), "1.81");
 }
 
@@ -177,7 +201,10 @@ fn test_token_not_in_pair_get_amount_out() {
     let pair = make_pair(1000, 2000, 30);
     let amt_in = TokenAmount::new(100, Token::new(8, Some("OTHER".to_string())));
     let err = pair.get_amount_out(&amt_in).unwrap_err();
-    assert!(matches!(err, peanut_task::pricing::UniswapV2PairError::TokenNotInPair(_)));
+    assert!(matches!(
+        err,
+        peanut_task::pricing::UniswapV2PairError::TokenNotInPair(_)
+    ));
 }
 
 #[test]
@@ -185,7 +212,10 @@ fn test_token_not_in_pair_get_spot_price() {
     let pair = make_pair(1000, 2000, 30);
     let other = Token::new(8, Some("OTHER".to_string()));
     let err = pair.get_spot_price(&other).unwrap_err();
-    assert!(matches!(err, peanut_task::pricing::UniswapV2PairError::TokenNotInPair(_)));
+    assert!(matches!(
+        err,
+        peanut_task::pricing::UniswapV2PairError::TokenNotInPair(_)
+    ));
 }
 
 #[test]
@@ -265,9 +295,9 @@ fn test_from_chain_spot_and_amount_out_work() {
 /// calculation and the Router's getAmountsOut.
 #[test]
 fn test_amm_output_matches_solidity_real_pairs() {
-    let rpc_url = std::env::var("FORK_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8545".to_string());
-    let sim = ForkSimulator::new(&rpc_url, Chain::EthereumMainnet).expect("ForkSimulator init failed");
+    let rpc_url = std::env::var("FORK_URL").unwrap_or_else(|_| "http://127.0.0.1:8545".to_string());
+    let sim =
+        ForkSimulator::new(&rpc_url, Chain::EthereumMainnet).expect("ForkSimulator init failed");
     let rpc = RpcUrl::new("{}", &rpc_url).expect("RpcUrl parse failed");
     let client = ChainClient::new(vec![rpc], 30, 3).expect("ChainClient init failed");
 
@@ -278,9 +308,8 @@ fn test_amm_output_matches_solidity_real_pairs() {
 
     for (name, addr) in pairs {
         let pair_address = Address::from_string(addr).unwrap();
-        let pair = UniswapV2Pair::from_chain(pair_address, &client).unwrap_or_else(|e| {
-            panic!("Failed to fetch {} pair: {}", name, e)
-        });
+        let pair = UniswapV2Pair::from_chain(pair_address, &client)
+            .unwrap_or_else(|e| panic!("Failed to fetch {} pair: {}", name, e));
 
         // Test token0 -> token1
         let amount_in_t0 = if pair.token0.token.decimals == 6 {

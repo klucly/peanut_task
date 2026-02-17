@@ -73,3 +73,7 @@ path = "scripts/arb_checker_cli.rs"
 [[bin]]
 name = "arb_bot"
 path = "scripts/arb_bot.rs"
+
+[[bin]]
+name = "manipulate_market"
+path = "scripts/manipulate_market.rs"

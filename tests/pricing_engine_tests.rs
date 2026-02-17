@@ -134,9 +134,8 @@ fn test_get_quote_no_pools_loaded() {
 
 #[test]
 fn test_get_quote_no_route_exists() {
-    let mut engine = pricing_engine_and_fork().expect(
-        "Fork not running or invalid FORK_URL. Run `just fork`.",
-    );
+    let mut engine =
+        pricing_engine_and_fork().expect("Fork not running or invalid FORK_URL. Run `just fork`.");
     // Load a single pool (USDC-WETH) - no path to a disconnected token
     let pair_addr = addr("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc");
     engine.load_pools(&[pair_addr]).expect("load pools failed");
@@ -150,9 +149,8 @@ fn test_get_quote_no_route_exists() {
 
 #[test]
 fn test_refresh_pool_not_found() {
-    let mut engine = pricing_engine_and_fork().expect(
-        "Fork not running or invalid FORK_URL. Run `just fork`.",
-    );
+    let mut engine =
+        pricing_engine_and_fork().expect("Fork not running or invalid FORK_URL. Run `just fork`.");
     let pair_addr = addr("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc");
     engine.load_pools(&[pair_addr]).expect("load pools failed");
     let other_addr = addr("0x0000000000000000000000000000000000000000");
@@ -162,9 +160,8 @@ fn test_refresh_pool_not_found() {
 
 #[test]
 fn test_pricing_engine_load_pools_rebuilds_router() {
-    let mut engine = pricing_engine_and_fork().expect(
-        "Fork not running or invalid FORK_URL. Run `just fork`.",
-    );
+    let mut engine =
+        pricing_engine_and_fork().expect("Fork not running or invalid FORK_URL. Run `just fork`.");
     assert_eq!(engine.pool_count(), 0);
     let pair_addr = addr("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc");
     engine.load_pools(&[pair_addr]).expect("load pools failed");
@@ -173,9 +170,8 @@ fn test_pricing_engine_load_pools_rebuilds_router() {
 
 #[test]
 fn test_get_quote_full_flow() {
-    let mut engine = pricing_engine_and_fork().expect(
-        "Fork not running or invalid FORK_URL. Run `just fork`.",
-    );
+    let mut engine =
+        pricing_engine_and_fork().expect("Fork not running or invalid FORK_URL. Run `just fork`.");
     let pair_addr = addr("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc");
     engine.load_pools(&[pair_addr]).expect("load pools failed");
     // Use tokens from the loaded pool (WETH has symbol "WETH", not "ETH").
@@ -183,7 +179,11 @@ fn test_get_quote_full_flow() {
     let tokens = engine.pool_tokens();
     let weth = tokens
         .iter()
-        .find(|t| t.symbol().map(|s| s == "WETH" || s == "ETH").unwrap_or(false))
+        .find(|t| {
+            t.symbol()
+                .map(|s| s == "WETH" || s == "ETH")
+                .unwrap_or(false)
+        })
         .unwrap()
         .clone();
     let usdc = tokens

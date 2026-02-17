@@ -20,22 +20,22 @@ use super::signal::Direction;
 pub struct BotConfig {
     /// Trading pairs to monitor (e.g., ["ETH/USDT", "BTC/USDT"])
     pub pairs: Vec<String>,
-    
+
     /// Time between ticks in seconds
     pub tick_interval_secs: u64,
-    
+
     /// Minimum score threshold to execute a signal
     pub min_score_threshold: Decimal,
-    
+
     /// Run in simulation mode (no real orders)
     pub simulation_mode: bool,
-    
+
     /// Signal generator configuration
     pub generator_config: GeneratorConfig,
-    
+
     /// Signal scorer configuration
     pub scorer_config: ScorerConfig,
-    
+
     /// Executor configuration
     pub executor_config: ExecutorConfig,
 }
@@ -79,6 +79,7 @@ impl BotConfig {
 /// Main arbitrage bot that monitors opportunities and executes trades.
 pub struct ArbBot {
     exchange: Arc<Mutex<ExchangeClient>>,
+    pricing: Arc<Mutex<PricingEngine>>,
     inventory: Arc<Mutex<InventoryTracker>>,
     fee_structure: FeeStructure,
     generator: SignalGenerator,
@@ -130,6 +131,7 @@ impl ArbBot {
 
         Self {
             exchange,
+            pricing: pricing_engine,
             inventory,
             fee_structure,
             generator,
@@ -144,13 +146,13 @@ impl ArbBot {
     pub fn run(&mut self) {
         self.running.store(true, Ordering::SeqCst);
         println!("Bot starting...");
-        
+
         // Sync balances initially
         self._sync_balances();
 
         while self.running.load(Ordering::SeqCst) {
             match self._tick() {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     eprintln!("Tick error: {}", e);
                     std::thread::sleep(std::time::Duration::from_secs(5));
@@ -158,7 +160,9 @@ impl ArbBot {
                 }
             }
 
-            std::thread::sleep(std::time::Duration::from_secs(self.config.tick_interval_secs));
+            std::thread::sleep(std::time::Duration::from_secs(
+                self.config.tick_interval_secs,
+            ));
         }
 
         println!("Bot stopped");
@@ -175,7 +179,25 @@ impl ArbBot {
         // Process each pair
         for pair in self.config.pairs.clone() {
             println!("Checking {}...", pair);
-            
+
+            // Refresh DEX pool data
+            if let Some((base, quote)) = pair.split_once('/') {
+                // Map ETH to WETH for DEX lookup if needed
+                let dex_base = if base == "ETH" { "WETH" } else { base };
+                let dex_quote = if quote == "ETH" { "WETH" } else { quote };
+
+                let mut pricing = self.pricing.lock().unwrap();
+                if let Some(pool) = pricing.get_pair_by_symbols(dex_base, dex_quote) {
+                    let pool_address = pool.address.clone();
+                    if let Err(e) = pricing.refresh_pool(&pool_address) {
+                        eprintln!("Failed to refresh pool for {}: {}", pair, e);
+                    } else {
+                        // println!("Refreshed pool for {}", pair);
+                    }
+                }
+                drop(pricing);
+            }
+
             // Generate signal
             let signal = match self.generator.generate(&pair) {
                 Some(s) => s,
@@ -194,9 +216,7 @@ impl ArbBot {
             if signal.score < self.config.min_score_threshold {
                 println!(
                     "Signal: {} spread={:.1}bps score={:.0}",
-                    pair,
-                    signal.spread_bps,
-                    signal.score
+                    pair, signal.spread_bps, signal.score
                 );
                 println!("Skipped: score below threshold");
                 continue;
@@ -205,9 +225,7 @@ impl ArbBot {
             // Log signal
             println!(
                 "Signal: {} spread={:.1}bps score={:.0}",
-                pair,
-                signal.spread_bps,
-                signal.score
+                pair, signal.spread_bps, signal.score
             );
 
             // Log execution intent
@@ -229,8 +247,11 @@ impl ArbBot {
                 let pnl = ctx.actual_net_pnl.unwrap_or(dec!(0));
                 println!("SUCCESS: PnL=${:.2}", pnl);
             } else {
-                eprintln!("FAILED: {}", ctx.error.unwrap_or_else(|| "unknown error".to_string()));
-                
+                eprintln!(
+                    "FAILED: {}",
+                    ctx.error.unwrap_or_else(|| "unknown error".to_string())
+                );
+
                 // Log circuit breaker status if tripped
                 if self.executor.circuit_breaker.is_open() {
                     eprintln!("Circuit breaker tripped");
@@ -251,7 +272,9 @@ impl ArbBot {
             Ok(balances) => {
                 drop(exchange); // Release lock before acquiring inventory lock
                 let mut inventory = self.inventory.lock().unwrap();
-                if let Err(e) = inventory.update_from_cex(crate::inventory::Venue::Binance, balances) {
+                if let Err(e) =
+                    inventory.update_from_cex(crate::inventory::Venue::Binance, balances)
+                {
                     eprintln!("Failed to sync balances: {}", e);
                 }
             }

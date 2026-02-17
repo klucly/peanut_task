@@ -23,19 +23,34 @@ fn other_token() -> Token {
 }
 
 fn shib_in_pair() -> TokenInPair {
-    TokenInPair::new(shib_token(), addr("0x0000000000000000000000000000000000000001"))
+    TokenInPair::new(
+        shib_token(),
+        addr("0x0000000000000000000000000000000000000001"),
+    )
 }
 fn eth_in_pair() -> TokenInPair {
-    TokenInPair::new(eth_token(), addr("0x0000000000000000000000000000000000000002"))
+    TokenInPair::new(
+        eth_token(),
+        addr("0x0000000000000000000000000000000000000002"),
+    )
 }
 fn usdc_in_pair() -> TokenInPair {
-    TokenInPair::new(usdc_token(), addr("0x0000000000000000000000000000000000000003"))
+    TokenInPair::new(
+        usdc_token(),
+        addr("0x0000000000000000000000000000000000000003"),
+    )
 }
 fn disconnected_in_pair() -> TokenInPair {
-    TokenInPair::new(disconnected_token(), addr("0x0000000000000000000000000000000000000004"))
+    TokenInPair::new(
+        disconnected_token(),
+        addr("0x0000000000000000000000000000000000000004"),
+    )
 }
 fn other_in_pair() -> TokenInPair {
-    TokenInPair::new(other_token(), addr("0x0000000000000000000000000000000000000005"))
+    TokenInPair::new(
+        other_token(),
+        addr("0x0000000000000000000000000000000000000005"),
+    )
 }
 
 #[test]
@@ -85,8 +100,14 @@ fn test_direct_vs_multihop() {
     let comparisons = finder
         .compare_routes(&shib_token(), &usdc_token(), amount_in, gas_price_gwei, 3)
         .unwrap();
-    let multihop = comparisons.iter().find(|c| c.route.num_hops() == 2).unwrap();
-    let direct = comparisons.iter().find(|c| c.route.num_hops() == 1).unwrap();
+    let multihop = comparisons
+        .iter()
+        .find(|c| c.route.num_hops() == 2)
+        .unwrap();
+    let direct = comparisons
+        .iter()
+        .find(|c| c.route.num_hops() == 1)
+        .unwrap();
     assert!(
         multihop.net_output > direct.net_output,
         "multi-hop net {} should exceed direct net {}",
@@ -151,6 +172,7 @@ fn test_no_route_exists() {
         eth_in_pair(),
         1000,
         1000,
+        0, // block_timestamp_last
         30,
     );
     let eth_usdc = UniswapV2Pair::new(
@@ -159,6 +181,7 @@ fn test_no_route_exists() {
         usdc_in_pair(),
         1000,
         1000,
+        0, // block_timestamp_last
         30,
     );
     let disconnected_other = UniswapV2Pair::new(
@@ -167,6 +190,7 @@ fn test_no_route_exists() {
         other_in_pair(),
         1000,
         1000,
+        0, // block_timestamp_last
         30,
     );
 
@@ -175,13 +199,9 @@ fn test_no_route_exists() {
     let routes = finder.find_all_routes(&shib_token(), &disconnected_token(), 3);
     assert!(routes.is_empty(), "no path from SHIB to DISCONNECTED");
 
-    let best = finder.find_best_route(
-        &shib_token(),
-        &disconnected_token(),
-        1000,
-        30,
-        3,
-    ).unwrap();
+    let best = finder
+        .find_best_route(&shib_token(), &disconnected_token(), 1000, 30, 3)
+        .unwrap();
     assert!(best.is_none());
 }
 
@@ -207,6 +227,7 @@ fn test_route_output_matches_sequential_swaps() {
         t1.clone(),
         1000 * 10u128.pow(18),
         2000 * 10u128.pow(18),
+        0,
         30,
     );
     let pool2 = UniswapV2Pair::new(
@@ -215,6 +236,7 @@ fn test_route_output_matches_sequential_swaps() {
         t2.clone(),
         2000 * 10u128.pow(18),
         3000 * 10u128.pow(18),
+        0,
         30,
     );
 

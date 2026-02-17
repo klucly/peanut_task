@@ -1,3 +1,10 @@
+use crate::chain::{
+    RpcUrl,
+    errors::{ChainClientCreationError, ChainClientError},
+    gas_price::GasPrice,
+    parsers::{parse_block_id, parse_tx_hash},
+    receipt_polling::poll_for_receipt,
+};
 use crate::core::base_types::{
     Address, SignedTransaction, TokenAmount, Transaction, TransactionReceipt,
 };
@@ -7,13 +14,6 @@ use alloy::primitives::{Address as AlloyAddress, B256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{BlockId, BlockNumberOrTag, TransactionRequest};
 use tokio::runtime::Runtime;
-use crate::chain::{
-    errors::{ChainClientCreationError, ChainClientError},
-    gas_price::GasPrice,
-    parsers::{parse_block_id, parse_tx_hash},
-    receipt_polling::poll_for_receipt,
-    RpcUrl,
-};
 
 /// Block metadata: number and Unix timestamp.
 #[derive(Debug, Clone)]
@@ -22,27 +22,32 @@ pub struct Block {
     pub timestamp: u64,
 }
 
+#[derive(Debug, Clone)]
 pub struct ChainClient {
     rpc_urls: Vec<RpcUrl>,
     timeout: u64,
     max_retries: u32,
-    runtime: Runtime,
+    runtime: std::sync::Arc<Runtime>,
 }
 
 impl ChainClient {
-    pub fn new(rpc_urls: Vec<RpcUrl>, timeout: u64, max_retries: u32) -> Result<Self, ChainClientCreationError> {
+    pub fn new(
+        rpc_urls: Vec<RpcUrl>,
+        timeout: u64,
+        max_retries: u32,
+    ) -> Result<Self, ChainClientCreationError> {
         if rpc_urls.is_empty() {
             return Err(ChainClientCreationError::NoRpcUrlsProvided);
         }
 
         let runtime = Runtime::new()
             .map_err(|e| ChainClientCreationError::TokioRuntimeError(e.to_string()))?;
-        
+
         Ok(Self {
             rpc_urls,
             timeout,
             max_retries,
-            runtime,
+            runtime: std::sync::Arc::new(runtime),
         })
     }
 
@@ -63,9 +68,10 @@ impl ChainClient {
         self.runtime.block_on(async {
             let parsed_url = rpc_url.as_url().clone();
             let provider = ProviderBuilder::new().connect_http(parsed_url);
-            let chain_id = provider.get_chain_id().await.map_err(|e| {
-                ChainClientError::RpcError(format!("get_chain_id failed: {}", e))
-            })?;
+            let chain_id = provider
+                .get_chain_id()
+                .await
+                .map_err(|e| ChainClientError::RpcError(format!("get_chain_id failed: {}", e)))?;
             Ok(chain_id)
         })
     }
@@ -93,10 +99,12 @@ impl ChainClient {
         self.runtime.block_on(async {
             let parsed_url = rpc_url.as_url().clone();
             let provider = ProviderBuilder::new().connect_http(parsed_url);
-            let balance = provider.get_balance(address).await
+            let balance = provider
+                .get_balance(address)
+                .await
                 .map_err(|e| ChainClientError::RpcError(format!("RPC call failed: {}", e)))?;
             let balance_u128 = balance.to::<u128>();
-            
+
             Ok(TokenAmount::native_eth(balance_u128))
         })
     }
@@ -127,11 +135,12 @@ impl ChainClient {
         self.runtime.block_on(async {
             let parsed_url = rpc_url.as_url().clone();
             let provider = ProviderBuilder::new().connect_http(parsed_url);
-            let nonce = provider.get_transaction_count(address)
+            let nonce = provider
+                .get_transaction_count(address)
                 .block_id(block_id)
                 .await
                 .map_err(|e| ChainClientError::RpcError(format!("RPC call failed: {}", e)))?;
-            
+
             Ok(nonce)
         })
     }
@@ -150,22 +159,27 @@ impl ChainClient {
         Err(ChainClientError::all_endpoints_failed(last_error))
     }
 
-    fn try_get_gas_price_from_url(
-        &self,
-        rpc_url: &RpcUrl,
-    ) -> Result<GasPrice, ChainClientError> {
+    fn try_get_gas_price_from_url(&self, rpc_url: &RpcUrl) -> Result<GasPrice, ChainClientError> {
         self.runtime.block_on(async {
             let parsed_url = rpc_url.as_url().clone();
             let provider = ProviderBuilder::new().connect_http(parsed_url);
-            let fee_history = provider.get_fee_history(1, BlockNumberOrTag::Latest, &[25.0, 50.0, 75.0])
+            let fee_history = provider
+                .get_fee_history(1, BlockNumberOrTag::Latest, &[25.0, 50.0, 75.0])
                 .await
-                .map_err(|e| ChainClientError::RpcError(format!("Failed to get fee history: {}", e)))?;
+                .map_err(|e| {
+                    ChainClientError::RpcError(format!("Failed to get fee history: {}", e))
+                })?;
 
-            let base_fee = fee_history.base_fee_per_gas
+            let base_fee = fee_history
+                .base_fee_per_gas
                 .last()
                 .copied()
                 .map(|fee: u128| fee as u64)
-                .ok_or_else(|| ChainClientError::InvalidResponse("Base fee not found in fee history".to_string()))?;
+                .ok_or_else(|| {
+                    ChainClientError::InvalidResponse(
+                        "Base fee not found in fee history".to_string(),
+                    )
+                })?;
 
             let (priority_fee_low, priority_fee_medium, priority_fee_high) =
                 if let Some(rewards) = fee_history.reward.as_ref() {
@@ -177,21 +191,22 @@ impl ChainClient {
                                 block_rewards[2] as u64,
                             )
                         } else {
-                            return Err(ChainClientError::InvalidResponse(
-                                format!("Insufficient reward percentiles: expected 3, got {}", block_rewards.len())
-                            ));
+                            return Err(ChainClientError::InvalidResponse(format!(
+                                "Insufficient reward percentiles: expected 3, got {}",
+                                block_rewards.len()
+                            )));
                         }
                     } else {
                         return Err(ChainClientError::InvalidResponse(
-                            "No block rewards found in fee history".to_string()
+                            "No block rewards found in fee history".to_string(),
                         ));
                     }
                 } else {
                     return Err(ChainClientError::InvalidResponse(
-                        "Reward data not found in fee history".to_string()
+                        "Reward data not found in fee history".to_string(),
                     ));
                 };
-            
+
             Ok(GasPrice::new(
                 base_fee,
                 priority_fee_low,
@@ -224,13 +239,18 @@ impl ChainClient {
         self.runtime.block_on(async {
             let parsed_url = rpc_url.as_url().clone();
             let provider = ProviderBuilder::new().connect_http(parsed_url);
-            let gas_estimate = provider.estimate_gas(tx_request.clone()).await
+            let gas_estimate = provider
+                .estimate_gas(tx_request.clone())
+                .await
                 .map_err(|e| ChainClientError::RpcError(format!("Gas estimation failed: {}", e)))?;
             Ok(gas_estimate)
         })
     }
 
-    pub fn send_transaction(&self, signed_tx: &SignedTransaction) -> Result<String, ChainClientError> {
+    pub fn send_transaction(
+        &self,
+        signed_tx: &SignedTransaction,
+    ) -> Result<String, ChainClientError> {
         let mut last_error = None;
         for rpc_url in &self.rpc_urls {
             for _ in 0..=self.max_retries {
@@ -270,9 +290,8 @@ impl ChainClient {
     ) -> Result<TransactionReceipt, ChainClientError> {
         let hash = parse_tx_hash(tx_hash)?;
         let rpc_urls = self.rpc_urls.clone();
-        self.runtime.block_on(async {
-            poll_for_receipt(rpc_urls, hash, timeout, poll_interval).await
-        })
+        self.runtime
+            .block_on(async { poll_for_receipt(rpc_urls, hash, timeout, poll_interval).await })
     }
 
     /// Returns transaction data; returns `TransactionNotFound` if not found.
@@ -284,7 +303,9 @@ impl ChainClient {
             for _ in 0..=self.max_retries {
                 match self.try_get_transaction_from_url(rpc_url, hash) {
                     Ok(Some(tx)) => return Ok(tx),
-                    Ok(None) => return Err(ChainClientError::TransactionNotFound(tx_hash.to_string())),
+                    Ok(None) => {
+                        return Err(ChainClientError::TransactionNotFound(tx_hash.to_string()));
+                    }
                     Err(e) => last_error = Some(e),
                 }
             }
@@ -300,15 +321,26 @@ impl ChainClient {
         self.runtime.block_on(async {
             let parsed_url = rpc_url.as_url().clone();
             let provider = ProviderBuilder::new().connect_http(parsed_url);
-            let tx = provider.get_transaction_by_hash(hash).await
+            let tx = provider
+                .get_transaction_by_hash(hash)
+                .await
                 .map_err(|e| ChainClientError::RpcError(format!("RPC call failed: {}", e)))?;
-            
+
             match tx {
                 Some(tx) => {
-                    let tx_json = serde_json::to_value(tx)
-                        .map_err(|e| ChainClientError::InvalidResponse(format!("Failed to serialize transaction: {}", e)))?;
+                    let tx_json = serde_json::to_value(tx).map_err(|e| {
+                        ChainClientError::InvalidResponse(format!(
+                            "Failed to serialize transaction: {}",
+                            e
+                        ))
+                    })?;
                     Transaction::from_web3(tx_json)
-                        .map_err(|e| ChainClientError::InvalidResponse(format!("Failed to parse transaction: {}", e)))
+                        .map_err(|e| {
+                            ChainClientError::InvalidResponse(format!(
+                                "Failed to parse transaction: {}",
+                                e
+                            ))
+                        })
                         .map(Some)
                 }
                 None => Ok(None),
@@ -316,7 +348,10 @@ impl ChainClient {
         })
     }
 
-    pub fn get_receipt(&self, tx_hash: &str) -> Result<Option<TransactionReceipt>, ChainClientError> {
+    pub fn get_receipt(
+        &self,
+        tx_hash: &str,
+    ) -> Result<Option<TransactionReceipt>, ChainClientError> {
         let hash = parse_tx_hash(tx_hash)?;
         let mut last_error = None;
 
@@ -401,9 +436,8 @@ impl ChainClient {
                 .get_block(block_id)
                 .await
                 .map_err(|e| ChainClientError::RpcError(format!("get_block failed: {}", e)))?;
-            let block = block_opt.ok_or_else(|| {
-                ChainClientError::InvalidResponse("Block not found".to_string())
-            })?;
+            let block = block_opt
+                .ok_or_else(|| ChainClientError::InvalidResponse("Block not found".to_string()))?;
             Ok(Block {
                 number: block.header().number(),
                 timestamp: block.header().timestamp(),

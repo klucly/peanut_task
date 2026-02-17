@@ -1,5 +1,7 @@
 use peanut_task::core::base_types::{Address, Token, TokenAmount};
-use peanut_task::pricing::{Decimal, PriceImpactAnalyzer, PriceImpactAnalyzerError, TokenInPair, UniswapV2Pair};
+use peanut_task::pricing::{
+    Decimal, PriceImpactAnalyzer, PriceImpactAnalyzerError, TokenInPair, UniswapV2Pair,
+};
 
 fn pair_address() -> Address {
     Address::from_string("0x0000000000000000000000000000000000000000").unwrap()
@@ -27,7 +29,15 @@ fn eth_token_in_pair() -> TokenInPair {
 }
 
 fn make_pair(reserve0: u128, reserve1: u128, fee_bps: u16) -> UniswapV2Pair {
-    UniswapV2Pair::new(pair_address(), token0(), token1(), reserve0, reserve1, fee_bps)
+    UniswapV2Pair::new(
+        pair_address(),
+        token0(),
+        token1(),
+        reserve0,
+        reserve1,
+        0,
+        fee_bps,
+    )
 }
 
 /// Pair where token0 is non-ETH and token1 is ETH; swapping token0 gives ETH out.
@@ -38,6 +48,7 @@ fn make_pair_with_eth_out(reserve_token0: u128, reserve_eth: u128, fee_bps: u16)
         eth_token_in_pair(),
         reserve_token0,
         reserve_eth,
+        0,
         fee_bps,
     )
 }
@@ -81,7 +92,9 @@ fn test_find_max_size_zero_reserve_returns_zero() {
     let pair = make_pair(0, 2000, 30);
     let analyzer = PriceImpactAnalyzer::new(pair);
     let t0 = token0();
-    let max = analyzer.find_max_size_for_impact(&t0.token, Decimal::new(1, 0)).unwrap();
+    let max = analyzer
+        .find_max_size_for_impact(&t0.token, Decimal::new(1, 0))
+        .unwrap();
     assert_eq!(max, 0);
 }
 
@@ -91,11 +104,18 @@ fn test_find_max_size_for_impact_respects_max_impact() {
     let analyzer = PriceImpactAnalyzer::new(pair);
     let t0 = token0();
     let max_impact = Decimal::new(1, 2);
-    let max_size = analyzer.find_max_size_for_impact(&t0.token, max_impact).unwrap();
+    let max_size = analyzer
+        .find_max_size_for_impact(&t0.token, max_impact)
+        .unwrap();
     if max_size > 0 {
         let amt = TokenAmount::new(max_size, t0.token.clone());
         let impact = analyzer.pair.get_price_impact(&amt).unwrap();
-        assert!(impact <= max_impact, "impact {} > max {}", impact, max_impact);
+        assert!(
+            impact <= max_impact,
+            "impact {} > max {}",
+            impact,
+            max_impact
+        );
     }
 }
 
@@ -118,7 +138,9 @@ fn test_estimate_true_cost_net_output_deduction() {
     let analyzer = PriceImpactAnalyzer::new(pair);
     let t0 = token0();
     let amount_in = TokenAmount::new(1000, t0.token.clone());
-    let cost = analyzer.estimate_true_cost(&amount_in, 30, 150_000).unwrap();
+    let cost = analyzer
+        .estimate_true_cost(&amount_in, 30, 150_000)
+        .unwrap();
     assert!(cost.gross_output > 0);
     assert!(cost.gas_cost_eth > 0);
     assert!(cost.net_output <= cost.gross_output);
@@ -141,7 +163,10 @@ fn test_generate_impact_table_spot_execution_impact_match_pair() {
     assert_eq!(rows[0].execution_price, expected_exec);
     assert_eq!(rows[0].price_impact_pct, expected_impact);
     assert_eq!(rows[0].amount_in, 500);
-    assert_eq!(rows[0].amount_out, analyzer.pair.get_amount_out(&amt).unwrap().raw);
+    assert_eq!(
+        rows[0].amount_out,
+        analyzer.pair.get_amount_out(&amt).unwrap().raw
+    );
 }
 
 #[test]
@@ -164,7 +189,10 @@ fn test_estimate_true_cost_net_output_underflow_when_eth_output() {
     let t0 = token0();
     let amount_in = TokenAmount::new(1, t0.token.clone());
     let gross = analyzer.pair.get_amount_out(&amount_in).unwrap().raw;
-    assert!(gross < 10, "tiny trade should yield small gross output for underflow test");
+    assert!(
+        gross < 10,
+        "tiny trade should yield small gross output for underflow test"
+    );
     let gas_price_gwei = 1_000_000u64;
     let gas_estimate = 500_000u64;
     let res = analyzer.estimate_true_cost(&amount_in, gas_price_gwei, gas_estimate);
@@ -191,10 +219,18 @@ fn test_find_max_size_boundary() {
     let analyzer = PriceImpactAnalyzer::new(pair);
     let t0 = token0();
     let max_impact = Decimal::new(1, 2);
-    let max_size = analyzer.find_max_size_for_impact(&t0.token, max_impact).unwrap();
+    let max_size = analyzer
+        .find_max_size_for_impact(&t0.token, max_impact)
+        .unwrap();
     if max_size > 0 {
         let amt = TokenAmount::new(max_size, t0.token.clone());
         let impact = analyzer.pair.get_price_impact(&amt).unwrap();
-        assert!(impact <= max_impact, "max_size {} should have impact {} <= {}", max_size, impact, max_impact);
+        assert!(
+            impact <= max_impact,
+            "max_size {} should have impact {} <= {}",
+            max_size,
+            impact,
+            max_impact
+        );
     }
 }

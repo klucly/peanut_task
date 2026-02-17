@@ -114,3 +114,7 @@ release version:
     git tag v{{version}}
     git push && git push --tags
     cargo publish
+# Bake imbalance: sell huge amount of ETH to crash price
+bake-imbalance *ARGS:
+    cargo run --bin manipulate_market -- {{ARGS}}
+

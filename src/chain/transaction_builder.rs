@@ -70,6 +70,16 @@ impl<'a> TransactionBuilder<'a> {
         self
     }
 
+    pub fn max_fee_per_gas_raw(mut self, fee: u64) -> Self {
+        self.max_fee_per_gas = Some(fee);
+        self
+    }
+
+    pub fn max_priority_fee_raw(mut self, fee: u64) -> Self {
+        self.max_priority_fee = Some(fee);
+        self
+    }
+
     pub fn with_gas_estimate(
         mut self,
         buffer: f64,
