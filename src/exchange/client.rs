@@ -22,7 +22,7 @@ pub struct ExchangeClient {
 impl ExchangeClient {
     /// Initialize with config. Validates connection on init (fetch_markets).
     pub fn new(config: ExchangeConfig) -> std::result::Result<Self, ExchangeError> {
-        tracing::info!("exchange request: new config sandbox={}", config.sandbox);
+        tracing::debug!("exchange request: new config sandbox={}", config.sandbox);
 
         let exchange = if let Some(ref url) = config.url_override {
             // Use ccxt_core::ExchangeConfig for url override (testing/mocking)
@@ -35,7 +35,10 @@ impl ExchangeClient {
                 .enable_rate_limit(true)
                 .url_override("public", url)
                 .url_override("private", url)
-                .option("defaultTimeInForce", serde_json::Value::String("IOC".to_string()))
+                .option(
+                    "defaultTimeInForce",
+                    serde_json::Value::String("IOC".to_string()),
+                )
                 .build();
             let options = BinanceOptions {
                 default_type: DefaultType::Spot,
@@ -69,14 +72,22 @@ impl ExchangeClient {
             Ok::<(), ExchangeError>(())
         })?;
 
-        tracing::info!("exchange response: new ok=true");
+        tracing::debug!("exchange response: new ok=true");
         Ok(Self { exchange, runtime })
     }
 
     /// Fetch L2 order book snapshot.
-    pub fn fetch_order_book(&self, symbol: &str, limit: u32) -> std::result::Result<OrderBook, ExchangeError> {
+    pub fn fetch_order_book(
+        &self,
+        symbol: &str,
+        limit: u32,
+    ) -> std::result::Result<OrderBook, ExchangeError> {
         let limit = if limit == 0 { 20 } else { limit };
-        tracing::info!("exchange request: fetch_order_book symbol={} limit={}", symbol, limit);
+        tracing::debug!(
+            "exchange request: fetch_order_book symbol={} limit={}",
+            symbol,
+            limit
+        );
 
         let ob: ccxt_rust::OrderBook = self.runtime.block_on(async {
             self.exchange
@@ -116,7 +127,7 @@ impl ExchangeClient {
             .map(|p| p * dec!(10000))
             .unwrap_or(dec!(0));
 
-        tracing::info!("exchange response: fetch_order_book ok=true");
+        tracing::debug!("exchange response: fetch_order_book ok=true");
         Ok(OrderBook {
             symbol: ob.symbol.clone(),
             timestamp: ob.timestamp,
@@ -130,8 +141,10 @@ impl ExchangeClient {
     }
 
     /// Fetch account balances. Filters out zero-balance assets.
-    pub fn fetch_balance(&self) -> std::result::Result<HashMap<String, AssetBalance>, ExchangeError> {
-        tracing::info!("exchange request: fetch_balance");
+    pub fn fetch_balance(
+        &self,
+    ) -> std::result::Result<HashMap<String, AssetBalance>, ExchangeError> {
+        tracing::debug!("exchange request: fetch_balance");
 
         let balance = self.runtime.block_on(async {
             self.exchange
@@ -156,7 +169,7 @@ impl ExchangeClient {
             );
         }
 
-        tracing::info!("exchange response: fetch_balance ok=true");
+        tracing::debug!("exchange response: fetch_balance ok=true");
         Ok(result)
     }
 
@@ -174,7 +187,7 @@ impl ExchangeClient {
         let price_decimal = Decimal::try_from(price)
             .map_err(|_| ExchangeError::InvalidResponse("invalid price".to_string()))?;
 
-        tracing::info!(
+        tracing::debug!(
             "exchange request: create_limit_ioc_order symbol={} side={} amount={} price={}",
             symbol,
             side,
@@ -199,17 +212,22 @@ impl ExchangeClient {
         })?;
 
         let result = order_to_result(&order);
-        tracing::info!("exchange response: create_limit_ioc_order ok=true");
+        tracing::debug!("exchange response: create_limit_ioc_order ok=true");
         Ok(result)
     }
 
     /// Place a market order.
-    pub fn create_market_order(&self, symbol: &str, side: &str, amount: f64) -> std::result::Result<OrderResult, ExchangeError> {
+    pub fn create_market_order(
+        &self,
+        symbol: &str,
+        side: &str,
+        amount: f64,
+    ) -> std::result::Result<OrderResult, ExchangeError> {
         let order_side = parse_side(side)?;
         let amount_decimal = Decimal::try_from(amount)
             .map_err(|_| ExchangeError::InvalidResponse("invalid amount".to_string()))?;
 
-        tracing::info!(
+        tracing::debug!(
             "exchange request: create_market_order symbol={} side={} amount={}",
             symbol,
             side,
@@ -231,13 +249,21 @@ impl ExchangeClient {
         })?;
 
         let result = order_to_result(&order);
-        tracing::info!("exchange response: create_market_order ok=true");
+        tracing::debug!("exchange response: create_market_order ok=true");
         Ok(result)
     }
 
     /// Cancel an open order.
-    pub fn cancel_order(&self, order_id: &str, symbol: &str) -> std::result::Result<OrderResult, ExchangeError> {
-        tracing::info!("exchange request: cancel_order order_id={} symbol={}", order_id, symbol);
+    pub fn cancel_order(
+        &self,
+        order_id: &str,
+        symbol: &str,
+    ) -> std::result::Result<OrderResult, ExchangeError> {
+        tracing::debug!(
+            "exchange request: cancel_order order_id={} symbol={}",
+            order_id,
+            symbol
+        );
 
         let order = self.runtime.block_on(async {
             self.exchange
@@ -247,13 +273,21 @@ impl ExchangeClient {
         })?;
 
         let result = order_to_result(&order);
-        tracing::info!("exchange response: cancel_order ok=true");
+        tracing::debug!("exchange response: cancel_order ok=true");
         Ok(result)
     }
 
     /// Check current status of an order.
-    pub fn fetch_order_status(&self, order_id: &str, symbol: &str) -> std::result::Result<OrderResult, ExchangeError> {
-        tracing::info!("exchange request: fetch_order_status order_id={} symbol={}", order_id, symbol);
+    pub fn fetch_order_status(
+        &self,
+        order_id: &str,
+        symbol: &str,
+    ) -> std::result::Result<OrderResult, ExchangeError> {
+        tracing::debug!(
+            "exchange request: fetch_order_status order_id={} symbol={}",
+            order_id,
+            symbol
+        );
 
         let order = self.runtime.block_on(async {
             self.exchange
@@ -263,24 +297,27 @@ impl ExchangeClient {
         })?;
 
         let result = order_to_result(&order);
-        tracing::info!("exchange response: fetch_order_status ok=true");
+        tracing::debug!("exchange response: fetch_order_status ok=true");
         Ok(result)
     }
 
     /// Get trading fee structure for a symbol.
-    pub fn get_trading_fees(&self, symbol: &str) -> std::result::Result<TradingFees, ExchangeError> {
-        tracing::info!("exchange request: get_trading_fees symbol={}", symbol);
+    pub fn get_trading_fees(
+        &self,
+        symbol: &str,
+    ) -> std::result::Result<TradingFees, ExchangeError> {
+        tracing::debug!("exchange request: get_trading_fees symbol={}", symbol);
 
-        let market = self.runtime.block_on(async {
-            self.exchange.market(symbol).await.map_err(map_ccxt_error)
-        })?;
+        let market = self
+            .runtime
+            .block_on(async { self.exchange.market(symbol).await.map_err(map_ccxt_error) })?;
 
         let (maker, taker) = match (market.maker, market.taker) {
             (Some(m), Some(t)) => (m, t),
             _ => (dec!(0.001), dec!(0.001)), // Binance default 0.1%
         };
 
-        tracing::info!("exchange response: get_trading_fees ok=true");
+        tracing::debug!("exchange response: get_trading_fees ok=true");
         Ok(TradingFees { maker, taker })
     }
 }
@@ -289,7 +326,10 @@ fn parse_side(side: &str) -> std::result::Result<OrderSide, ExchangeError> {
     match side.to_lowercase().as_str() {
         "buy" => Ok(OrderSide::Buy),
         "sell" => Ok(OrderSide::Sell),
-        _ => Err(ExchangeError::InvalidResponse(format!("invalid side: {}", side))),
+        _ => Err(ExchangeError::InvalidResponse(format!(
+            "invalid side: {}",
+            side
+        ))),
     }
 }
 

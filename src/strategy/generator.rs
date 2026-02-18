@@ -118,7 +118,7 @@ impl SignalGenerator {
         // Check configured limits
         // Check configured limits
         if net_pnl < self.config.min_profit_usd {
-            tracing::info!(
+            tracing::debug!(
                 "Skipping {}: Net PnL ${:.2} < Min Profit ${:.2}. Trade Value: ${:.2}, Gross: ${:.2}, Fees: ${:.2}",
                 pair,
                 net_pnl,
@@ -131,7 +131,7 @@ impl SignalGenerator {
         }
 
         if trade_value_usd > self.config.max_position_usd {
-            tracing::info!(
+            tracing::debug!(
                 "Skipping {}: Trade Value ${:.2} > Max Position ${:.2}",
                 pair,
                 trade_value_usd,

@@ -439,7 +439,7 @@ impl ArbChecker {
 
         if swaps.is_empty() {
             if let Some(rejected) = best_rejected_swap {
-                tracing::info!(
+                tracing::debug!(
                     "No executable swaps for {}. Best Rejected: Amount: {}, Direction: {:?}, PnL: {:.2} bps, Inventory OK: {}, Executable: {}. Reason: {}",
                     pair,
                     rejected.amount,
@@ -450,7 +450,7 @@ impl ArbChecker {
                     best_rejected_reason.unwrap_or_default()
                 );
             } else {
-                tracing::info!(
+                tracing::debug!(
                     "No executable swaps found for {}. Checked {} amounts. No valid candidates.",
                     pair,
                     amounts_decimal.len()
@@ -464,7 +464,7 @@ impl ArbChecker {
             .max_by_key(|swap| swap.estimated_net_pnl_bps)
             .unwrap();
 
-        tracing::info!(
+        tracing::debug!(
             "Best swap for {}: Amount: {}, Direction: {:?}, Gap: {:.2} bps, Est PnL: {:.2} bps. DEX Price: {:.2}, CEX Bid: {:.2}, CEX Ask: {:.2}",
             pair,
             max_swap.amount,

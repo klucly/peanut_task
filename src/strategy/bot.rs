@@ -278,6 +278,49 @@ impl ArbBot {
 
             // Sync balances after execution
             self._sync_balances();
+
+            if success {
+                let inventory = self.inventory.lock().unwrap();
+                let snapshot = inventory.snapshot(None);
+                drop(inventory); // Release lock
+
+                if let Some((base, quote)) = pair.split_once('/') {
+                    let mut log_msg = format!("Inventory for {}: ", pair);
+
+                    // Helper to format asset balance
+                    let format_asset = |asset: &str| -> String {
+                        let total = snapshot.totals.get(asset).cloned().unwrap_or(Decimal::ZERO);
+                        let mut venue_details = Vec::new();
+                        // Iterate over venues in sorted order for consistent logs
+                        let mut venues: Vec<_> = snapshot.venues.iter().collect();
+                        venues.sort_by_key(|(k, _)| *k);
+
+                        for (venue_name, balances) in venues {
+                            if let Some(bal) = balances.get(asset) {
+                                if !bal.total.is_zero() {
+                                    venue_details.push(format!("{}: {:.4}", venue_name, bal.total));
+                                }
+                            }
+                        }
+                        if venue_details.is_empty() {
+                            format!("{} Total: {:.4}", asset, total)
+                        } else {
+                            format!(
+                                "{} Total: {:.4} [{}]",
+                                asset,
+                                total,
+                                venue_details.join(", ")
+                            )
+                        }
+                    };
+
+                    log_msg.push_str(&format_asset(base));
+                    log_msg.push_str(" | ");
+                    log_msg.push_str(&format_asset(quote));
+
+                    tracing::info!("{}", log_msg);
+                }
+            }
         }
 
         Ok(())
@@ -310,7 +353,7 @@ impl ArbBot {
 
     /// Synchronize balances from wallet.
     fn _sync_wallet_balances(&mut self) {
-        tracing::warn!("Starting wallet balance sync...");
+        tracing::debug!("Starting wallet balance sync...");
         let pricing = self.pricing.lock().unwrap();
         let tokens_with_addr = pricing.get_tokens_with_addresses();
         drop(pricing);
@@ -370,7 +413,7 @@ impl ArbBot {
                         if let Some(dec_bal_raw) = Decimal::from_u128(balance_u128) {
                             let divisor = Decimal::from(10_u128.pow(token.decimals() as u32));
                             let val = dec_bal_raw / divisor;
-                            tracing::warn!("Synced Wallet Balance: {} = {}", symbol, val);
+                            tracing::debug!("Synced Wallet Balance: {} = {}", symbol, val);
                             wallet_balances.insert(symbol, val);
                         }
                     }
@@ -380,7 +423,7 @@ impl ArbBot {
         }
 
         let eth_bal = wallet_balances.get("ETH").cloned().unwrap_or(Decimal::ZERO);
-        tracing::warn!("Synced Wallet Balance: ETH = {}", eth_bal);
+        tracing::debug!("Synced Wallet Balance: ETH = {}", eth_bal);
 
         // Update inventory
         let mut inventory = self.inventory.lock().unwrap();
