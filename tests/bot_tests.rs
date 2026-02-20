@@ -56,6 +56,8 @@ fn make_bot(config: BotConfig) -> Option<ArbBot> {
         config,
         chain_client,
         wallet_address,
+        None,  // no wallet_manager in test
+        None,  // no token_map in test
     ))
 }
 

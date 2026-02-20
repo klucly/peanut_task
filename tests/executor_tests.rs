@@ -66,6 +66,7 @@ fn create_test_executor_sync(config: Option<ExecutorConfig>) -> Executor {
         pricing,
         inventory,
         chain_client,
+        None, // no DexExecutor in tests
         FeeStructure::default(),
         config,
     )
@@ -87,7 +88,7 @@ fn test_default_executor_config() {
 
 #[test]
 fn test_custom_executor_config() {
-    let config = ExecutorConfig::new(10, 120, dec!(0.9), false, false, None);
+    let config = ExecutorConfig::new(10, 120, dec!(0.9), false, false, None, None, None);
     assert_eq!(config.leg1_timeout_secs, 10);
     assert_eq!(config.leg2_timeout_secs, 120);
     assert_eq!(config.min_fill_ratio, dec!(0.9));

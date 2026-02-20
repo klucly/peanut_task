@@ -180,10 +180,11 @@ impl BotStats {
 }
 
 /// Main arbitrage bot that monitors opportunities and executes trades.
-use crate::chain::ChainClient;
+use crate::chain::{DexChainConfig, DexExecutor, ChainClient};
 use crate::core::base_types::Address;
 use crate::core::base_types::TokenAmount;
 use crate::core::base_types::Transaction;
+use crate::core::wallet_manager::WalletManager;
 use std::collections::HashMap;
 
 /// Main arbitrage bot that monitors opportunities and executes trades.
@@ -204,6 +205,7 @@ pub struct ArbBot {
 
 impl ArbBot {
     /// Create a new arbitrage bot.
+    /// When config.simulation_mode is false, pass Some(wallet_manager) and Some(token_map) for real DEX execution.
     pub fn new(
         exchange: ExchangeClient,
         pricing_engine: PricingEngine,
@@ -212,6 +214,8 @@ impl ArbBot {
         config: BotConfig,
         chain_client: ChainClient,
         wallet_address: Address,
+        wallet_manager: Option<Arc<WalletManager>>,
+        token_map: Option<HashMap<String, Address>>,
     ) -> Self {
         // Wrap in Arc<Mutex<>> for shared ownership
         let exchange = Arc::new(Mutex::new(exchange));
@@ -242,11 +246,25 @@ impl ArbBot {
 
         // Create executor with shared references
         let chain_client_arc = Arc::new(chain_client.clone());
+        let dex_executor = if !config.simulation_mode {
+            match (wallet_manager, token_map) {
+                (Some(wm), Some(tm)) => Some(Arc::new(DexExecutor::new(
+                    Arc::clone(&chain_client_arc),
+                    wm,
+                    DexChainConfig::ethereum_mainnet(),
+                    tm,
+                ))),
+                _ => None,
+            }
+        } else {
+            None
+        };
         let executor = Executor::new(
             Arc::clone(&exchange),
             Arc::clone(&pricing_engine),
             Arc::clone(&inventory),
             chain_client_arc,
+            dex_executor,
             fee_structure.clone(),
             Some(executor_config),
         );

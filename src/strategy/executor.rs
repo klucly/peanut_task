@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 use super::fees::FeeStructure;
 use super::recovery::{CircuitBreaker, CircuitBreakerConfig, ReplayProtection};
 use super::signal::{Direction, Signal};
-use crate::chain::ChainClient;
+use crate::chain::{DexExecutor, DexSwapDirection, ChainClient};
 use crate::exchange::ExchangeClient;
 use crate::inventory::InventoryTracker;
 use crate::pricing::PricingEngine;
@@ -88,6 +88,10 @@ pub struct ExecutorConfig {
     pub use_flashbots: bool,
     pub simulation_mode: bool,
     pub circuit_breaker: Option<CircuitBreakerConfig>,
+    /// DEX slippage in bps (default 50 when None). Used for amountOutMin in real DEX swaps.
+    pub dex_slippage_bps: Option<u16>,
+    /// CEX limit order slippage in bps (default 10 when None). Used for buy/sell limit price and unwind.
+    pub cex_slippage_bps: Option<u16>,
 }
 
 impl Default for ExecutorConfig {
@@ -99,6 +103,8 @@ impl Default for ExecutorConfig {
             use_flashbots: true,
             simulation_mode: true,
             circuit_breaker: None,
+            dex_slippage_bps: None,
+            cex_slippage_bps: None,
         }
     }
 }
@@ -111,6 +117,8 @@ impl ExecutorConfig {
         use_flashbots: bool,
         simulation_mode: bool,
         circuit_breaker: Option<CircuitBreakerConfig>,
+        dex_slippage_bps: Option<u16>,
+        cex_slippage_bps: Option<u16>,
     ) -> Self {
         Self {
             leg1_timeout_secs,
@@ -119,6 +127,8 @@ impl ExecutorConfig {
             use_flashbots,
             simulation_mode,
             circuit_breaker,
+            dex_slippage_bps,
+            cex_slippage_bps,
         }
     }
 }
@@ -135,12 +145,12 @@ struct LegResult {
 }
 
 /// Execute arbitrage trades across CEX and DEX.
-#[allow(dead_code)] // pricing, inventory, chain_client reserved for real DEX execution implementation
 pub struct Executor {
     exchange: Arc<Mutex<ExchangeClient>>,
     pricing: Arc<Mutex<PricingEngine>>,
     inventory: Arc<Mutex<InventoryTracker>>,
     chain_client: Arc<ChainClient>,
+    dex_executor: Option<Arc<DexExecutor>>,
     fee_structure: FeeStructure,
     config: ExecutorConfig,
     pub circuit_breaker: CircuitBreaker,
@@ -153,6 +163,7 @@ impl Executor {
         pricing_module: Arc<Mutex<PricingEngine>>,
         inventory_tracker: Arc<Mutex<InventoryTracker>>,
         chain_client: Arc<ChainClient>,
+        dex_executor: Option<Arc<DexExecutor>>,
         fee_structure: FeeStructure,
         config: Option<ExecutorConfig>,
     ) -> Self {
@@ -162,6 +173,7 @@ impl Executor {
             pricing: pricing_module,
             inventory: inventory_tracker,
             chain_client,
+            dex_executor,
             fee_structure,
             config: cfg.clone(),
             circuit_breaker: CircuitBreaker::new(cfg.circuit_breaker),
@@ -370,11 +382,14 @@ impl Executor {
             Direction::BuyDexSellCex => "sell",
         };
 
+        let cex_slippage_bps = self.config.cex_slippage_bps.unwrap_or(10);
+        let slippage = Decimal::from(cex_slippage_bps) / Decimal::from(10_000);
+        let limit_price = match signal.direction {
+            Direction::BuyCexSellDex => signal.cex_price * (Decimal::ONE + slippage), // buy: pay up to cex_price + slippage
+            Direction::BuyDexSellCex => signal.cex_price * (Decimal::ONE - slippage), // sell: receive at least cex_price - slippage
+        };
         let amount_f64 = size.to_string().parse::<f64>().unwrap_or(0.0);
-        let price_f64 = (signal.cex_price * dec!(1.001))
-            .to_string()
-            .parse::<f64>()
-            .unwrap_or(0.0);
+        let price_f64 = limit_price.to_string().parse::<f64>().unwrap_or(0.0);
 
         if amount_f64 <= 0.0
             || !amount_f64.is_finite()
@@ -435,33 +450,186 @@ impl Executor {
             };
         }
 
-        // Real DEX execution requires submitting an on-chain swap transaction.
-        // ChainClient is available via self.chain_client but swap transaction
-        // construction is not yet implemented.
-        tracing::error!(
-            "DEX execution not implemented for real mode. pair={}, size={}",
-            signal.pair,
-            size
-        );
-        LegResult {
-            success: false,
-            price: Decimal::ZERO,
-            filled: Decimal::ZERO,
-            error: Some("DEX execution not implemented — real mode".to_string()),
-            critical: true,
+        let dex = match &self.dex_executor {
+            Some(d) => d,
+            None => {
+                tracing::error!("Real DEX mode but no DexExecutor configured");
+                return LegResult {
+                    success: false,
+                    price: Decimal::ZERO,
+                    filled: Decimal::ZERO,
+                    error: Some("DEX executor not configured".to_string()),
+                    critical: true,
+                };
+            }
+        };
+
+        let direction = match signal.direction {
+            Direction::BuyCexSellDex => DexSwapDirection::SellBase, // DEX sells base
+            Direction::BuyDexSellCex => DexSwapDirection::BuyBase, // DEX buys base
+        };
+        let slippage_bps = self.config.dex_slippage_bps.unwrap_or(50);
+        let timeout = self.config.leg2_timeout_secs;
+
+        match dex.execute_swap(
+            &signal.pair,
+            direction,
+            size,
+            signal.dex_price,
+            slippage_bps,
+            timeout,
+        ) {
+            Ok(result) => {
+                if result.success {
+                    let price = result
+                        .fill_price_approx
+                        .unwrap_or(signal.dex_price);
+                    LegResult {
+                        success: true,
+                        price,
+                        filled: size,
+                        error: None,
+                        critical: false,
+                    }
+                } else {
+                    LegResult {
+                        success: false,
+                        price: Decimal::ZERO,
+                        filled: Decimal::ZERO,
+                        error: Some("DEX swap reverted or failed".to_string()),
+                        critical: false,
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("DEX swap error: {}", e);
+                LegResult {
+                    success: false,
+                    price: Decimal::ZERO,
+                    filled: Decimal::ZERO,
+                    error: Some(e.to_string()),
+                    critical: false,
+                }
+            }
         }
     }
 
     /// Unwind position after a partial execution failure.
-    /// Returns true if real mode and unwind was required but not implemented (critical).
-    fn _unwind(&self, _ctx: &ExecutionContext) -> bool {
+    /// Returns true if unwind was required but failed (critical).
+    fn _unwind(&self, ctx: &ExecutionContext) -> bool {
         if self.config.simulation_mode {
             std::thread::sleep(std::time::Duration::from_millis(100));
             return false;
         }
 
-        tracing::error!("Real unwind not implemented — manual intervention required");
+        let fill_size = match ctx.leg1_fill_size {
+            Some(s) if s > Decimal::ZERO => s,
+            _ => {
+                tracing::error!("Unwind: no leg1 fill size");
+                return true;
+            }
+        };
+        let fill_price = ctx.leg1_fill_price.unwrap_or(Decimal::ZERO);
+        if fill_price <= Decimal::ZERO {
+            tracing::error!("Unwind: no leg1 fill price");
+            return true;
+        }
+
+        if ctx.leg1_venue == "cex" {
+            return self._unwind_cex(ctx, fill_size, fill_price);
+        }
+        if ctx.leg1_venue == "dex" {
+            return self._unwind_dex(ctx, fill_size, fill_price);
+        }
+
+        tracing::error!("Unwind: unknown leg1 venue {}", ctx.leg1_venue);
         true
+    }
+
+    /// Unwind CEX leg: place opposite order (sell what we bought, or buy what we sold).
+    fn _unwind_cex(&self, ctx: &ExecutionContext, fill_size: Decimal, fill_price: Decimal) -> bool {
+        let cex_slippage_bps = self.config.cex_slippage_bps.unwrap_or(10);
+        let slippage = Decimal::from(cex_slippage_bps) / Decimal::from(10_000);
+
+        let (side, limit_price) = match ctx.leg1_side {
+            LegSide::Buy => {
+                ("sell", fill_price * (Decimal::ONE - slippage))
+            }
+            LegSide::Sell => {
+                ("buy", fill_price * (Decimal::ONE + slippage))
+            }
+        };
+
+        let amount_f64 = fill_size.to_string().parse::<f64>().unwrap_or(0.0);
+        let price_f64 = limit_price.to_string().parse::<f64>().unwrap_or(0.0);
+        if amount_f64 <= 0.0 || price_f64 <= 0.0 {
+            tracing::error!("Unwind CEX: invalid amount or price");
+            return true;
+        }
+
+        let exchange = self
+            .exchange
+            .lock()
+            .unwrap_or_else(|e| {
+                tracing::error!("Mutex poisoned in executor (exchange): {}", e);
+                e.into_inner()
+            });
+        match exchange.create_limit_ioc_order(&ctx.signal.pair, side, amount_f64, price_f64) {
+            Ok(result) => {
+                if result.status == "filled" {
+                    tracing::info!("Unwind CEX: counter-order filled");
+                    false
+                } else {
+                    tracing::error!("Unwind CEX: counter-order not filled: {}", result.status);
+                    true
+                }
+            }
+            Err(e) => {
+                tracing::error!("Unwind CEX failed: {:?}", e);
+                true
+            }
+        }
+    }
+
+    /// Unwind DEX leg: execute reverse swap (opposite direction).
+    fn _unwind_dex(&self, ctx: &ExecutionContext, fill_size: Decimal, _fill_price: Decimal) -> bool {
+        let dex = match &self.dex_executor {
+            Some(d) => d,
+            None => {
+                tracing::error!("Unwind DEX: no DexExecutor configured");
+                return true;
+            }
+        };
+
+        let reverse_direction = match ctx.leg1_side {
+            LegSide::Sell => DexSwapDirection::BuyBase,   // we had sold base, so reverse = buy base
+            LegSide::Buy => DexSwapDirection::SellBase,  // we had bought base, so reverse = sell base
+        };
+        let slippage_bps = self.config.dex_slippage_bps.unwrap_or(50);
+        let timeout = self.config.leg2_timeout_secs;
+
+        match dex.execute_swap(
+            &ctx.signal.pair,
+            reverse_direction,
+            fill_size,
+            ctx.signal.dex_price,
+            slippage_bps,
+            timeout,
+        ) {
+            Ok(result) => {
+                if result.success {
+                    tracing::info!("Unwind DEX: reverse swap succeeded");
+                    false
+                } else {
+                    tracing::error!("Unwind DEX: reverse swap reverted or failed");
+                    true
+                }
+            }
+            Err(e) => {
+                tracing::error!("Unwind DEX failed: {}", e);
+                true
+            }
+        }
     }
 
     /// Calculate actual PnL from execution.

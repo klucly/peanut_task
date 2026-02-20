@@ -161,7 +161,13 @@ impl Default for CircuitBreaker {
 
 /// Replay protection to prevent duplicate signal execution.
 ///
-/// Tracks executed signals with TTL-based cleanup.
+/// Tracks executed signals with TTL-based cleanup. **Process-local only:** the set is
+/// in-memory; restarting the process clears it. After a restart, the same logical
+/// opportunity could be executed again if signal IDs are regenerated or the TTL has
+/// passed. This is acceptable when the risk model assumes single-process runs and
+/// short TTL (e.g. 60s). For multi-process or long-TTL safety, use a persistent or
+/// distributed store (e.g. file-backed or Redis) and gate `is_duplicate` / `mark_executed`
+/// on it.
 #[derive(Debug)]
 pub struct ReplayProtection {
     /// Map of signal_id to execution timestamp

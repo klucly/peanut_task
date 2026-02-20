@@ -1,4 +1,5 @@
 use std::env;
+use std::sync::Arc;
 
 use peanut_task::{
     ArbBot, BotConfig, ExchangeClient, ExchangeConfig, FeeStructure, GeneratorConfig,
@@ -75,6 +76,31 @@ fn main() {
         i += 1;
     }
 
+    // Pricing URLs: from env or localhost default (Phase 3.1)
+    let pricing_rpc_url = env::var("PRICING_RPC_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8545".to_string());
+    let pricing_ws_url = env::var("PRICING_WS_URL")
+        .unwrap_or_else(|_| "ws://127.0.0.1:8545".to_string());
+
+    // Load exchange config before building clients (needed for consistency guard)
+    let exchange_config = ExchangeConfig::from_env().expect("Failed to load exchange config");
+
+    // Mainnet/testnet consistency guard: fail fast if --live with testnet CEX or localhost pricing (Phase 1.2)
+    if !simulation_mode {
+        if exchange_config.sandbox {
+            panic!(
+                "Live mode requires mainnet CEX; set BINANCE_API_KEY and BINANCE_SECRET (not testnet keys)"
+            );
+        }
+        let localhost_rpc = pricing_rpc_url.contains("127.0.0.1") || pricing_rpc_url.contains("localhost");
+        let localhost_ws = pricing_ws_url.contains("127.0.0.1") || pricing_ws_url.contains("localhost");
+        if localhost_rpc || localhost_ws {
+            panic!(
+                "Live mode requires non-localhost pricing RPC/WS; set PRICING_RPC_URL and PRICING_WS_URL"
+            );
+        }
+    }
+
     // Initialize RPC client
     let rpc_urls = if simulation_mode {
         vec![RpcUrl::new("http://127.0.0.1:8545/?key={}", "dummy").expect("Invalid RPC URL")]
@@ -87,8 +113,8 @@ fn main() {
     // Initialize pricing engine (blocking)
     let mut pricing_engine = PricingEngine::new(
         chain_client.clone(),
-        "http://127.0.0.1:8545",
-        "ws://127.0.0.1:8545",
+        &pricing_rpc_url,
+        &pricing_ws_url,
         Chain::EthereumMainnet,
         Some(Address::from_string("0x0000000000000000000000000000000000000000").unwrap()),
     )
@@ -212,8 +238,7 @@ fn main() {
         .expect("Failed to load pools");
 
     // Initialize exchange client (blocking)
-    let exchange_config = ExchangeConfig::from_env().expect("Failed to load exchange config");
-    let exchange = ExchangeClient::new(exchange_config).expect("Failed to create exchange client");
+    let exchange = ExchangeClient::new(exchange_config.clone()).expect("Failed to create exchange client");
 
     // Initialize inventory tracker (blocking)
     let inventory = InventoryTracker::new(vec![Venue::Binance, Venue::Wallet])
@@ -234,6 +259,14 @@ fn main() {
         _ => None,
     };
 
+    // CEX and DEX slippage from env (optional)
+    let cex_slippage_bps = env::var("CEX_SLIPPAGE_BPS")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok());
+    let dex_slippage_bps = env::var("DEX_SLIPPAGE_BPS")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok());
+
     // Create bot configuration
     let executor_config = ExecutorConfig::new(
         10,                               // leg1_timeout_secs
@@ -242,6 +275,36 @@ fn main() {
         false,                            // use_flashbots
         simulation_mode,
         circuit_breaker,
+        dex_slippage_bps,
+        cex_slippage_bps,
+    );
+
+    // Generator limits from env (Phase 5.2)
+    let generator_min_profit_usd = env::var("GENERATOR_MIN_PROFIT_USD")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .map(Decimal::try_from)
+        .and_then(Result::ok)
+        .unwrap_or(Decimal::from(5));
+    let generator_max_position_usd = env::var("GENERATOR_MAX_POSITION_USD")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .map(Decimal::try_from)
+        .and_then(Result::ok)
+        .unwrap_or(Decimal::from(10_000));
+    let generator_signal_ttl_secs = env::var("GENERATOR_SIGNAL_TTL_SECS")
+        .ok()
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(5);
+    let generator_cooldown_secs = env::var("GENERATOR_COOLDOWN_SECS")
+        .ok()
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(2);
+    let generator_config = GeneratorConfig::new(
+        generator_min_profit_usd,
+        generator_max_position_usd,
+        generator_signal_ttl_secs,
+        generator_cooldown_secs,
     );
 
     let bot_config = BotConfig::new(
@@ -249,7 +312,7 @@ fn main() {
         tick_interval,
         min_score,
         simulation_mode,
-        GeneratorConfig::default(),
+        generator_config,
         ScorerConfig::default(),
         executor_config,
     );
@@ -263,18 +326,28 @@ fn main() {
     log::info!("Tick interval: {}s", tick_interval);
     log::info!("═══════════════════════════════════════════");
 
-    // Initialize wallet
-    let wallet_key = env::var("ETH_PRIVATE_KEY").unwrap_or_else(|_| {
-        // Default Anvil key (Account 0) if not set
-        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()
-    });
+    // Initialize wallet: in live mode ETH_PRIVATE_KEY is required (no default).
+    let wallet_key = if simulation_mode {
+        env::var("ETH_PRIVATE_KEY").unwrap_or_else(|_| {
+            // Default Anvil key (Account 0) for simulation only
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()
+        })
+    } else {
+        env::var("ETH_PRIVATE_KEY").expect("ETH_PRIVATE_KEY must be set in live mode (--live)")
+    };
     let wallet_manager =
         peanut_task::core::wallet_manager::WalletManager::from_hex_string(&wallet_key)
             .expect("Invalid private key");
     let wallet_address = wallet_manager.address();
     tracing::info!("Bot Wallet Address: {}", wallet_address);
 
-    // Create bot
+    // Token map for DEX executor (symbol -> Address)
+    let dex_token_map: std::collections::HashMap<String, Address> = token_map
+        .iter()
+        .map(|(k, v)| (k.clone(), Address::from_string(v).expect("token address")))
+        .collect();
+
+    // Create bot (pass wallet and token map for real DEX when in live mode)
     let mut bot = ArbBot::new(
         exchange,
         pricing_engine,
@@ -283,6 +356,8 @@ fn main() {
         bot_config,
         chain_client.clone(),
         wallet_address,
+        Some(Arc::new(wallet_manager)),
+        Some(dex_token_map),
     );
 
     // Setup Ctrl+C handler
@@ -310,7 +385,7 @@ fn print_usage(program: &str) {
     println!("Options:");
     println!("  --pairs <PAIR1> <PAIR2> ...  Trading pairs to monitor (default: ETH/USDT)");
     println!("  --simulation                 Run in simulation mode (default)");
-    println!("  --live                       Run in live trading mode");
+    println!("  --live                       Run in live trading mode (requires ETH_PRIVATE_KEY)");
     println!("  --min-score <SCORE>          Minimum score threshold (default: 60)");
     println!("  --tick-interval <SECS>       Tick interval in seconds (default: 1)");
     println!("  -h, --help                   Print this help message");

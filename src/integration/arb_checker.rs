@@ -95,7 +95,10 @@ impl ArbChecker {
             .ok_or(ArbCheckerError::InvalidPair(pair.to_string()))?;
 
         // Lock exchange to fetch order book
-        let exchange = self.exchange_client.lock().unwrap();
+        let exchange = self.exchange_client.lock().unwrap_or_else(|e| {
+            tracing::error!("ArbChecker mutex poisoned (exchange_client): {}", e);
+            e.into_inner()
+        });
         let order_book = exchange
             .fetch_order_book(pair, 100)
             .map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?;
@@ -119,7 +122,10 @@ impl ArbChecker {
         };
 
         // Lock pricing to access DEX prices
-        let pricing = self.pricing_engine.lock().unwrap();
+        let pricing = self.pricing_engine.lock().unwrap_or_else(|e| {
+            tracing::error!("ArbChecker mutex poisoned (pricing_engine): {}", e);
+            e.into_inner()
+        });
         let uniswap2pair = pricing
             .get_pair_by_symbols(dex_token0, dex_token1)
             .ok_or(ArbCheckerError::InvalidPair(pair.to_string()))?;
@@ -324,7 +330,10 @@ impl ArbChecker {
         let mut swap = best_swap.ok_or(ArbCheckerError::NoProfit)?;
 
         // Final inventory check for the winner
-        let inventory = self.inventory_tracker.lock().unwrap();
+        let inventory = self.inventory_tracker.lock().unwrap_or_else(|e| {
+            tracing::error!("ArbChecker mutex poisoned (inventory_tracker): {}", e);
+            e.into_inner()
+        });
         // Venue::Binance / Venue::Wallet logic depends on direction
         let inventory_check = match swap.direction {
             ExchangeTypeDirection::BuyCexSellDex => {
@@ -365,7 +374,10 @@ impl ArbChecker {
             .ok_or(ArbCheckerError::InvalidPair(pair.to_string()))?;
 
         // 1. Fetch data ONCE
-        let exchange = self.exchange_client.lock().unwrap();
+        let exchange = self.exchange_client.lock().unwrap_or_else(|e| {
+            tracing::error!("ArbChecker mutex poisoned (exchange_client): {}", e);
+            e.into_inner()
+        });
         let order_book = exchange
             .fetch_order_book(pair, 100)
             .map_err(|_| ArbCheckerError::InvalidOrderBook(pair.to_string()))?;
@@ -388,7 +400,10 @@ impl ArbChecker {
             token1_symbol
         };
 
-        let pricing = self.pricing_engine.lock().unwrap();
+        let pricing = self.pricing_engine.lock().unwrap_or_else(|e| {
+            tracing::error!("ArbChecker mutex poisoned (pricing_engine): {}", e);
+            e.into_inner()
+        });
         let uniswap2pair = pricing
             .get_pair_by_symbols(dex_token0, dex_token1)
             .ok_or(ArbCheckerError::InvalidPair(pair.to_string()))?;

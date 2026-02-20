@@ -192,6 +192,7 @@ fn test_generator_executor_cex_first_simulation() {
         pricing_for_exec,
         Arc::new(Mutex::new(inv_for_exec)),
         Arc::clone(&chain_client),
+        None, // no DexExecutor in simulation test
         FeeStructure::default(),
         Some(ExecutorConfig {
             simulation_mode: true,
@@ -309,6 +310,7 @@ fn test_generator_executor_dex_first_simulation() {
         pricing_for_exec,
         Arc::new(Mutex::new(inv_for_exec)),
         Arc::clone(&chain_client),
+        None, // no DexExecutor in simulation test
         FeeStructure::default(),
         Some(ExecutorConfig {
             simulation_mode: true,

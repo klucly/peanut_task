@@ -14,20 +14,42 @@ pub struct ExchangeConfig {
 
 impl ExchangeConfig {
     /// Load configuration from environment variables.
-    /// Uses BINANCE_TESTNET_API_KEY, BINANCE_TESTNET_SECRET.
-    /// Sandbox defaults to true for testnet.
+    ///
+    /// **Mainnet:** Set `BINANCE_API_KEY` and `BINANCE_SECRET` → `sandbox: false`.
+    /// **Testnet:** Set `BINANCE_TESTNET_API_KEY` and `BINANCE_TESTNET_SECRET` → `sandbox: true`.
+    /// Mainnet takes precedence when both pairs are present.
+    /// Fails if neither (mainnet or testnet) pair is complete.
     pub fn from_env() -> Result<Self, ExchangeError> {
         dotenvy::dotenv().ok();
 
-        let api_key = env::var("BINANCE_TESTNET_API_KEY")
-            .map_err(|_| ExchangeError::Auth("BINANCE_TESTNET_API_KEY not set".to_string()))?;
-        let secret = env::var("BINANCE_TESTNET_SECRET")
-            .map_err(|_| ExchangeError::Auth("BINANCE_TESTNET_SECRET not set".to_string()))?;
+        let mainnet_key = env::var("BINANCE_API_KEY").ok();
+        let mainnet_secret = env::var("BINANCE_SECRET").ok();
+        let testnet_key = env::var("BINANCE_TESTNET_API_KEY").ok();
+        let testnet_secret = env::var("BINANCE_TESTNET_SECRET").ok();
+
+        let (api_key, secret, sandbox) = if mainnet_key.as_deref().and(mainnet_secret.as_deref()).is_some() {
+            (
+                mainnet_key.unwrap(),
+                mainnet_secret.unwrap(),
+                false,
+            )
+        } else if testnet_key.as_deref().and(testnet_secret.as_deref()).is_some() {
+            (
+                testnet_key.unwrap(),
+                testnet_secret.unwrap(),
+                true,
+            )
+        } else {
+            return Err(ExchangeError::Auth(
+                "Set either BINANCE_API_KEY+BINANCE_SECRET (mainnet) or \
+                 BINANCE_TESTNET_API_KEY+BINANCE_TESTNET_SECRET (testnet)".to_string(),
+            ));
+        };
 
         Ok(Self {
             api_key,
             secret,
-            sandbox: true,
+            sandbox,
             url_override: None,
         })
     }
