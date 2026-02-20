@@ -62,6 +62,7 @@ fn test_direct_vs_multihop() {
         usdc_in_pair(),
         1 * 10u128.pow(18),
         1 * 10u128.pow(6),
+        0,
         30,
     );
     // Good liquidity: 10e18 SHIB / 10e18 ETH
@@ -71,6 +72,7 @@ fn test_direct_vs_multihop() {
         eth_in_pair(),
         10 * 10u128.pow(18),
         10 * 10u128.pow(18),
+        0,
         30,
     );
     // Good liquidity: 10e18 ETH / 1e9 USDC (1 ETH = 1000 USDC)
@@ -80,6 +82,7 @@ fn test_direct_vs_multihop() {
         usdc_in_pair(),
         10 * 10u128.pow(18),
         1_000 * 10u128.pow(6),
+        0,
         30,
     );
 
@@ -125,6 +128,7 @@ fn test_gas_makes_direct_better() {
         eth_in_pair(),
         10 * 10u128.pow(18),
         10 * 10u128.pow(18),
+        0,
         30,
     );
     // Multi-hop: SHIB-USDC, USDC-ETH (2 hops) - tune so multi-hop gives slightly more ETH at low gas
@@ -134,6 +138,7 @@ fn test_gas_makes_direct_better() {
         usdc_in_pair(),
         10 * 10u128.pow(18),
         20_000 * 10u128.pow(6), // 20k USDC
+        0,
         30,
     );
     let usdc_eth = UniswapV2Pair::new(
@@ -142,6 +147,7 @@ fn test_gas_makes_direct_better() {
         eth_in_pair(),
         20_000 * 10u128.pow(6),
         10 * 10u128.pow(18),
+        0,
         30,
     );
 

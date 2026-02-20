@@ -22,8 +22,6 @@ pub struct ExchangeClient {
 impl ExchangeClient {
     /// Initialize with config. Validates connection on init (fetch_markets).
     pub fn new(config: ExchangeConfig) -> std::result::Result<Self, ExchangeError> {
-        tracing::debug!("exchange request: new config sandbox={}", config.sandbox);
-
         let exchange = if let Some(ref url) = config.url_override {
             // Use ccxt_core::ExchangeConfig for url override (testing/mocking)
             let ccxt_config = CcxtConfig::builder()
@@ -72,7 +70,6 @@ impl ExchangeClient {
             Ok::<(), ExchangeError>(())
         })?;
 
-        tracing::debug!("exchange response: new ok=true");
         Ok(Self { exchange, runtime })
     }
 
@@ -83,11 +80,6 @@ impl ExchangeClient {
         limit: u32,
     ) -> std::result::Result<OrderBook, ExchangeError> {
         let limit = if limit == 0 { 20 } else { limit };
-        tracing::debug!(
-            "exchange request: fetch_order_book symbol={} limit={}",
-            symbol,
-            limit
-        );
 
         let ob: ccxt_rust::OrderBook = self.runtime.block_on(async {
             self.exchange
@@ -127,7 +119,6 @@ impl ExchangeClient {
             .map(|p| p * dec!(10000))
             .unwrap_or(dec!(0));
 
-        tracing::debug!("exchange response: fetch_order_book ok=true");
         Ok(OrderBook {
             symbol: ob.symbol.clone(),
             timestamp: ob.timestamp,
@@ -144,8 +135,6 @@ impl ExchangeClient {
     pub fn fetch_balance(
         &self,
     ) -> std::result::Result<HashMap<String, AssetBalance>, ExchangeError> {
-        tracing::debug!("exchange request: fetch_balance");
-
         let balance = self.runtime.block_on(async {
             self.exchange
                 .fetch_balance(None)
@@ -169,7 +158,6 @@ impl ExchangeClient {
             );
         }
 
-        tracing::debug!("exchange response: fetch_balance ok=true");
         Ok(result)
     }
 
@@ -186,14 +174,6 @@ impl ExchangeClient {
             .map_err(|_| ExchangeError::InvalidResponse("invalid amount".to_string()))?;
         let price_decimal = Decimal::try_from(price)
             .map_err(|_| ExchangeError::InvalidResponse("invalid price".to_string()))?;
-
-        tracing::debug!(
-            "exchange request: create_limit_ioc_order symbol={} side={} amount={} price={}",
-            symbol,
-            side,
-            amount,
-            price
-        );
 
         let mut params = HashMap::new();
         params.insert("timeInForce".to_string(), "IOC".to_string());
@@ -212,7 +192,6 @@ impl ExchangeClient {
         })?;
 
         let result = order_to_result(&order);
-        tracing::debug!("exchange response: create_limit_ioc_order ok=true");
         Ok(result)
     }
 
@@ -226,13 +205,6 @@ impl ExchangeClient {
         let order_side = parse_side(side)?;
         let amount_decimal = Decimal::try_from(amount)
             .map_err(|_| ExchangeError::InvalidResponse("invalid amount".to_string()))?;
-
-        tracing::debug!(
-            "exchange request: create_market_order symbol={} side={} amount={}",
-            symbol,
-            side,
-            amount
-        );
 
         let order = self.runtime.block_on(async {
             self.exchange
@@ -249,7 +221,6 @@ impl ExchangeClient {
         })?;
 
         let result = order_to_result(&order);
-        tracing::debug!("exchange response: create_market_order ok=true");
         Ok(result)
     }
 
@@ -259,12 +230,6 @@ impl ExchangeClient {
         order_id: &str,
         symbol: &str,
     ) -> std::result::Result<OrderResult, ExchangeError> {
-        tracing::debug!(
-            "exchange request: cancel_order order_id={} symbol={}",
-            order_id,
-            symbol
-        );
-
         let order = self.runtime.block_on(async {
             self.exchange
                 .cancel_order(order_id, symbol)
@@ -273,7 +238,6 @@ impl ExchangeClient {
         })?;
 
         let result = order_to_result(&order);
-        tracing::debug!("exchange response: cancel_order ok=true");
         Ok(result)
     }
 
@@ -283,12 +247,6 @@ impl ExchangeClient {
         order_id: &str,
         symbol: &str,
     ) -> std::result::Result<OrderResult, ExchangeError> {
-        tracing::debug!(
-            "exchange request: fetch_order_status order_id={} symbol={}",
-            order_id,
-            symbol
-        );
-
         let order = self.runtime.block_on(async {
             self.exchange
                 .fetch_order(order_id, symbol)
@@ -297,7 +255,6 @@ impl ExchangeClient {
         })?;
 
         let result = order_to_result(&order);
-        tracing::debug!("exchange response: fetch_order_status ok=true");
         Ok(result)
     }
 
@@ -306,8 +263,6 @@ impl ExchangeClient {
         &self,
         symbol: &str,
     ) -> std::result::Result<TradingFees, ExchangeError> {
-        tracing::debug!("exchange request: get_trading_fees symbol={}", symbol);
-
         let market = self
             .runtime
             .block_on(async { self.exchange.market(symbol).await.map_err(map_ccxt_error) })?;
@@ -317,7 +272,6 @@ impl ExchangeClient {
             _ => (dec!(0.001), dec!(0.001)), // Binance default 0.1%
         };
 
-        tracing::debug!("exchange response: get_trading_fees ok=true");
         Ok(TradingFees { maker, taker })
     }
 }

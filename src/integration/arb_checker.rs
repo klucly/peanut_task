@@ -438,23 +438,38 @@ impl ArbChecker {
         }
 
         if swaps.is_empty() {
-            if let Some(rejected) = best_rejected_swap {
-                tracing::debug!(
-                    "No executable swaps for {}. Best Rejected: Amount: {}, Direction: {:?}, PnL: {:.2} bps, Inventory OK: {}, Executable: {}. Reason: {}",
-                    pair,
-                    rejected.amount,
-                    rejected.direction,
-                    rejected.estimated_net_pnl_bps,
-                    rejected.inventory_ok,
-                    rejected.executable,
-                    best_rejected_reason.unwrap_or_default()
+            // Log market snapshot so the caller can see why no trade fired
+            if let Some(ref best) = best_rejected_swap {
+                let dir_str = match best.direction {
+                    ExchangeTypeDirection::BuyCexSellDex => "BUY_CEX_SELL_DEX",
+                    ExchangeTypeDirection::BuyDexSellCex => "BUY_DEX_SELL_CEX",
+                };
+                let cex_price = match best.direction {
+                    ExchangeTypeDirection::BuyCexSellDex => best.cex_ask,
+                    ExchangeTypeDirection::BuyDexSellCex => best.cex_bid,
+                };
+                let rejection = if !best.inventory_ok {
+                    format!(
+                        "INVENTORY: {}",
+                        best.inventory_reason.as_deref().unwrap_or("unknown reason")
+                    )
+                } else {
+                    format!("NO_PROFIT (best net={:.0}bps)", best.estimated_net_pnl_bps)
+                };
+                tracing::info!(
+                    "[MARKET] {}  {}  dex={:.2}  cex={:.2}  spread={:+.0}bps  costs={:.0}bps  net={:+.0}bps  size={:.4}  → {}",
+                    best.pair,
+                    dir_str,
+                    best.dex_price,
+                    cex_price,
+                    best.gap_bps,
+                    best.estimated_costs_bps,
+                    best.estimated_net_pnl_bps,
+                    best.amount,
+                    rejection,
                 );
             } else {
-                tracing::debug!(
-                    "No executable swaps found for {}. Checked {} amounts. No valid candidates.",
-                    pair,
-                    amounts_decimal.len()
-                );
+                tracing::info!("[MARKET] {}  no opportunity evaluated", pair);
             }
             return Ok(None);
         }
@@ -463,18 +478,6 @@ impl ArbChecker {
             .iter()
             .max_by_key(|swap| swap.estimated_net_pnl_bps)
             .unwrap();
-
-        tracing::debug!(
-            "Best swap for {}: Amount: {}, Direction: {:?}, Gap: {:.2} bps, Est PnL: {:.2} bps. DEX Price: {:.2}, CEX Bid: {:.2}, CEX Ask: {:.2}",
-            pair,
-            max_swap.amount,
-            max_swap.direction,
-            max_swap.gap_bps,
-            max_swap.estimated_net_pnl_bps,
-            max_swap.dex_price,
-            max_swap.cex_bid,
-            max_swap.cex_ask
-        );
 
         Ok(Some(max_swap.clone()))
     }

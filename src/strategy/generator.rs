@@ -64,24 +64,21 @@ impl SignalGenerator {
 
     pub fn generate(&mut self, pair: &str) -> Option<Signal> {
         if self.in_cooldown(pair) {
-            tracing::debug!("Skipping {} due to cooldown", pair);
             return None;
         }
 
         let opportunity = match self.arb_checker.check(pair) {
             Ok(Some(opp)) => opp,
             Ok(None) => {
-                tracing::debug!("No opportunity found for {}", pair);
                 return None;
             }
             Err(e) => {
-                tracing::warn!("Error checking {}: {}", pair, e);
+                tracing::warn!("ArbChecker error for pair {}: {:?}", pair, e);
                 return None;
             }
         };
 
         if !opportunity.executable {
-            tracing::debug!("Opportunity for {} not executable (inventory/profit)", pair);
             return None;
         }
 
@@ -102,7 +99,6 @@ impl SignalGenerator {
 
         // Safety check: if price is 0, we can't trade
         if cex_price_ref <= Decimal::ZERO {
-            tracing::warn!("Signals generated with zero CEX price for {}", pair);
             return None;
         }
 
@@ -118,21 +114,18 @@ impl SignalGenerator {
         // Check configured limits
         // Check configured limits
         if net_pnl < self.config.min_profit_usd {
-            tracing::debug!(
-                "Skipping {}: Net PnL ${:.2} < Min Profit ${:.2}. Trade Value: ${:.2}, Gross: ${:.2}, Fees: ${:.2}",
+            tracing::info!(
+                "[GENERATOR] {}  LOW_PROFIT  net_pnl=${:.2} < min_profit=${:.2}",
                 pair,
                 net_pnl,
-                self.config.min_profit_usd,
-                trade_value_usd,
-                gross_pnl,
-                fees
+                self.config.min_profit_usd
             );
             return None;
         }
 
         if trade_value_usd > self.config.max_position_usd {
-            tracing::debug!(
-                "Skipping {}: Trade Value ${:.2} > Max Position ${:.2}",
+            tracing::info!(
+                "[GENERATOR] {}  MAX_POSITION  position_usd=${:.2} > max=${:.2}",
                 pair,
                 trade_value_usd,
                 self.config.max_position_usd
@@ -154,15 +147,6 @@ impl SignalGenerator {
             expiry,
             opportunity.inventory_ok,
             opportunity.executable,
-        );
-
-        tracing::info!(
-            "SIGNAL GENERATED: {} {:?} Amount: {}. Net PnL: ${:.2}. Expiry: {}",
-            pair,
-            direction,
-            opportunity.amount,
-            net_pnl,
-            expiry
         );
 
         self.last_signal_time.insert(pair.to_string(), now);

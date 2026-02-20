@@ -3,11 +3,23 @@ use rust_decimal_macros::dec;
 use std::sync::{Arc, Mutex};
 use time::OffsetDateTime;
 
+use super::fees::FeeStructure;
 use super::recovery::{CircuitBreaker, ReplayProtection};
 use super::signal::{Direction, Signal};
+use crate::chain::ChainClient;
 use crate::exchange::ExchangeClient;
 use crate::inventory::InventoryTracker;
 use crate::pricing::PricingEngine;
+
+/// Whether the first leg of an execution is a buy or a sell.
+/// Used to correctly compute PnL regardless of execution order (CEX-first vs DEX-first).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegSide {
+    /// Spending quote to obtain base (buying)
+    Buy,
+    /// Spending base to obtain quote (selling)
+    Sell,
+}
 
 /// Executor state tracking execution progress.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +41,7 @@ pub struct ExecutionContext {
     pub state: ExecutorState,
 
     pub leg1_venue: String,
+    pub leg1_side: LegSide,
     pub leg1_order_id: Option<String>,
     pub leg1_fill_price: Option<Decimal>,
     pub leg1_fill_size: Option<Decimal>,
@@ -50,6 +63,7 @@ impl ExecutionContext {
             signal,
             state: ExecutorState::Idle,
             leg1_venue: String::new(),
+            leg1_side: LegSide::Buy, // default; overwritten before use
             leg1_order_id: None,
             leg1_fill_price: None,
             leg1_fill_size: None,
@@ -115,10 +129,13 @@ struct LegResult {
 }
 
 /// Execute arbitrage trades across CEX and DEX.
+#[allow(dead_code)] // pricing, inventory, chain_client reserved for real DEX execution implementation
 pub struct Executor {
     exchange: Arc<Mutex<ExchangeClient>>,
     pricing: Arc<Mutex<PricingEngine>>,
     inventory: Arc<Mutex<InventoryTracker>>,
+    chain_client: Arc<ChainClient>,
+    fee_structure: FeeStructure,
     config: ExecutorConfig,
     pub circuit_breaker: CircuitBreaker,
     pub replay_protection: ReplayProtection,
@@ -129,12 +146,16 @@ impl Executor {
         exchange_client: Arc<Mutex<ExchangeClient>>,
         pricing_module: Arc<Mutex<PricingEngine>>,
         inventory_tracker: Arc<Mutex<InventoryTracker>>,
+        chain_client: Arc<ChainClient>,
+        fee_structure: FeeStructure,
         config: Option<ExecutorConfig>,
     ) -> Self {
         Self {
             exchange: exchange_client,
             pricing: pricing_module,
             inventory: inventory_tracker,
+            chain_client,
+            fee_structure,
             config: config.unwrap_or_default(),
             circuit_breaker: CircuitBreaker::default(),
             replay_protection: ReplayProtection::default(),
@@ -145,19 +166,14 @@ impl Executor {
     #[tracing::instrument(skip(self, signal), fields(pair = %signal.pair, direction = ?signal.direction, score = %signal.score))]
     pub fn execute(&mut self, signal: Signal) -> ExecutionContext {
         let mut ctx = ExecutionContext::new(signal.clone());
-        tracing::info!(
-            "Starting execution for {} (Score: {})",
-            signal.pair,
-            signal.score
-        );
 
-        // Pre-flight checks
+        // Pre-flight checks — these are protective guards, not genuine trade failures.
+        // Only record_failure() when an actual execution attempt fails.
         if self.circuit_breaker.is_open() {
             tracing::warn!("Circuit breaker open - rejecting execution");
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("Circuit breaker open".to_string());
             ctx.finished_at = Some(OffsetDateTime::now_utc());
-            self.circuit_breaker.record_failure();
             return ctx;
         }
 
@@ -167,39 +183,34 @@ impl Executor {
             ctx.error = Some("Duplicate signal".to_string());
             ctx.finished_at = Some(OffsetDateTime::now_utc());
             self.replay_protection.mark_executed(&signal);
-            self.circuit_breaker.record_failure();
             return ctx;
         }
 
         ctx.state = ExecutorState::Validating;
         if !signal.is_valid() {
-            tracing::warn!("Signal validation failed");
+            tracing::warn!(
+                "Signal invalid (expired or negative PnL): {}",
+                signal.signal_id
+            );
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("Signal invalid".to_string());
             ctx.finished_at = Some(OffsetDateTime::now_utc());
             self.replay_protection.mark_executed(&signal);
-            self.circuit_breaker.record_failure();
             return ctx;
         }
 
         // Additional validation: Price sanity check
         if signal.cex_price <= Decimal::ZERO {
-            tracing::error!("Invalid CEX price in signal: {}", signal.cex_price);
+            tracing::warn!(
+                "Signal has invalid CEX price ({}): {}",
+                signal.cex_price,
+                signal.signal_id
+            );
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("Invalid CEX price".to_string());
             ctx.finished_at = Some(OffsetDateTime::now_utc());
-            self.circuit_breaker.record_failure();
             return ctx;
         }
-
-        tracing::debug!(
-            "Validation passed. Strategy: {}",
-            if self.config.use_flashbots {
-                "Flashbots (DEX first)"
-            } else {
-                "Standard (CEX first)"
-            }
-        );
 
         // Execute based on leg order strategy
         ctx = if self.config.use_flashbots {
@@ -211,10 +222,9 @@ impl Executor {
         // Record result
         self.replay_protection.mark_executed(&signal);
         if ctx.state == ExecutorState::Done {
-            tracing::info!("Execution successful. Net PnL: {:?}", ctx.actual_net_pnl);
             self.circuit_breaker.record_success();
         } else {
-            tracing::error!("Execution failed: {:?}", ctx.error);
+            // Only actual execution failures count toward tripping the circuit breaker
             self.circuit_breaker.record_failure();
         }
 
@@ -226,9 +236,15 @@ impl Executor {
     fn _execute_cex_first(&mut self, mut ctx: ExecutionContext) -> ExecutionContext {
         let signal = &ctx.signal;
 
-        // Leg 1: CEX
+        // leg1 = CEX. Direction determines if CEX is buy or sell.
+        let leg1_side = match signal.direction {
+            Direction::BuyCexSellDex => LegSide::Buy,
+            Direction::BuyDexSellCex => LegSide::Sell,
+        };
+
         ctx.state = ExecutorState::Leg1Pending;
         ctx.leg1_venue = "cex".to_string();
+        ctx.leg1_side = leg1_side;
 
         let leg1 = self._execute_cex_leg(signal, signal.size);
 
@@ -273,9 +289,15 @@ impl Executor {
     fn _execute_dex_first(&mut self, mut ctx: ExecutionContext) -> ExecutionContext {
         let signal = &ctx.signal;
 
-        // Leg 1: DEX
+        // leg1 = DEX. Direction determines if DEX is buy or sell.
+        let leg1_side = match signal.direction {
+            Direction::BuyCexSellDex => LegSide::Sell, // selling base on DEX
+            Direction::BuyDexSellCex => LegSide::Buy,  // buying base on DEX
+        };
+
         ctx.state = ExecutorState::Leg1Pending;
         ctx.leg1_venue = "dex".to_string();
+        ctx.leg1_side = leg1_side;
 
         let leg1 = self._execute_dex_leg(signal, signal.size);
 
@@ -313,16 +335,6 @@ impl Executor {
     /// Execute CEX leg.
     fn _execute_cex_leg(&self, signal: &Signal, size: Decimal) -> LegResult {
         if self.config.simulation_mode {
-            tracing::info!(
-                "Simulating CEX Leg: {} {} @ {}",
-                if signal.direction == Direction::BuyCexSellDex {
-                    "Buy"
-                } else {
-                    "Sell"
-                },
-                size,
-                signal.cex_price
-            );
             std::thread::sleep(std::time::Duration::from_millis(100));
             return LegResult {
                 success: true,
@@ -344,28 +356,18 @@ impl Executor {
             .parse::<f64>()
             .unwrap_or(0.0);
 
-        tracing::info!("Placing CEX Order: {} {} @ {}", side, amount_f64, price_f64);
-
         let exchange = self.exchange.lock().unwrap();
         match exchange.create_limit_ioc_order(&signal.pair, side, amount_f64, price_f64) {
-            Ok(result) => {
-                tracing::info!(
-                    "CEX Order Result: Status={}, Filled={}, AvgPrice={}",
-                    result.status,
-                    result.amount_filled,
-                    result.avg_fill_price
-                );
-                LegResult {
-                    success: result.status == "filled",
-                    price: result.avg_fill_price,
-                    filled: result.amount_filled,
-                    error: if result.status != "filled" {
-                        Some(result.status.clone())
-                    } else {
-                        None
-                    },
-                }
-            }
+            Ok(result) => LegResult {
+                success: result.status == "filled",
+                price: result.avg_fill_price,
+                filled: result.amount_filled,
+                error: if result.status != "filled" {
+                    Some(result.status.clone())
+                } else {
+                    None
+                },
+            },
             Err(e) => {
                 tracing::error!("CEX Order Failed: {:?}", e);
                 LegResult {
@@ -378,19 +380,9 @@ impl Executor {
         }
     }
 
-    /// Execute DEX leg (simulation stub).
+    /// Execute DEX leg.
     fn _execute_dex_leg(&self, signal: &Signal, size: Decimal) -> LegResult {
         if self.config.simulation_mode {
-            tracing::info!(
-                "Simulating DEX Leg: {} {} @ {}",
-                if signal.direction == Direction::BuyDexSellCex {
-                    "Buy"
-                } else {
-                    "Sell"
-                },
-                size,
-                signal.dex_price
-            );
             std::thread::sleep(std::time::Duration::from_millis(500));
             return LegResult {
                 success: true,
@@ -400,39 +392,57 @@ impl Executor {
             };
         }
 
-        tracing::warn!("Real DEX execution requires Week 2 integration");
+        // Real DEX execution requires submitting an on-chain swap transaction.
+        // ChainClient is available via self.chain_client but swap transaction
+        // construction is not yet implemented.
+        tracing::error!(
+            "DEX execution not implemented for real mode. pair={}, size={}",
+            signal.pair,
+            size
+        );
         LegResult {
             success: false,
             price: Decimal::ZERO,
             filled: Decimal::ZERO,
-            error: Some("DEX execution not implemented".to_string()),
+            error: Some("DEX execution not implemented — real mode".to_string()),
         }
     }
 
-    /// Unwind position (simulation stub).
+    /// Unwind position after a partial execution failure.
     fn _unwind(&self, _ctx: &ExecutionContext) {
         if self.config.simulation_mode {
             std::thread::sleep(std::time::Duration::from_millis(100));
             return;
         }
 
-        tracing::warn!("Real unwind not implemented");
+        tracing::error!("Real unwind not implemented — manual intervention required");
     }
 
     /// Calculate actual PnL from execution.
+    /// Uses leg1_side to correctly identify which leg was the sell (revenue) and buy (cost),
+    /// regardless of whether we went CEX-first or DEX-first.
     fn _calculate_pnl(&self, ctx: &ExecutionContext) -> Decimal {
-        let signal = &ctx.signal;
         let leg1_price = ctx.leg1_fill_price.unwrap_or(Decimal::ZERO);
         let leg1_size = ctx.leg1_fill_size.unwrap_or(Decimal::ZERO);
         let leg2_price = ctx.leg2_fill_price.unwrap_or(Decimal::ZERO);
 
-        let gross = match signal.direction {
-            Direction::BuyCexSellDex => (leg2_price - leg1_price) * leg1_size,
-            Direction::BuyDexSellCex => (leg1_price - leg2_price) * leg1_size,
+        // Sell leg generates revenue; buy leg is the cost
+        let (sell_price, buy_price) = match ctx.leg1_side {
+            LegSide::Sell => (leg1_price, leg2_price),
+            LegSide::Buy => (leg2_price, leg1_price),
         };
 
-        // ~40 bps fee assumption
-        let fees = leg1_size * leg1_price * dec!(0.004);
+        let gross = (sell_price - buy_price) * leg1_size;
+
+        // Use configured fee structure instead of hardcoded assumptions
+        let trade_value_usd = buy_price * leg1_size;
+        let fee_bps = self.fee_structure.cex_taker_bps + self.fee_structure.dex_swap_bps;
+        let fees = if trade_value_usd > Decimal::ZERO {
+            (fee_bps / Decimal::from(10_000)) * trade_value_usd
+        } else {
+            Decimal::ZERO
+        };
+
         gross - fees
     }
 }
