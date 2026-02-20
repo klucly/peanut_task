@@ -1,3 +1,17 @@
+//! ArbChecker: finds executable arbitrage opportunities between CEX and DEX.
+//!
+//! **DEX pricing:** via `PricingEngine::get_pair_by_symbols()` then
+//! `UniswapV2Pair::get_amount_out` / `get_amount_in` (not `get_quote()`).
+//!
+//! **CEX pricing:** `ExchangeClient::fetch_order_book()` +
+//! `OrderBookAnalyzer::walk_the_book()`.
+//!
+//! **Pre-flight:** `InventoryTracker::can_execute()`.
+//!
+//! **Profitability:** `(sell_revenue - buy_cost) - (all_fees + gas)` encoded in bps as
+//! `estimated_net_pnl_bps = gap_bps - estimated_costs_bps`; `executable = inventory_ok &&
+//! estimated_net_pnl_bps > 0`. USD threshold applied in `SignalGenerator` via `min_profit_usd`.
+
 use ccxt_rust::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal_macros::dec;

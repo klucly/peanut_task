@@ -105,13 +105,12 @@ impl SignalGenerator {
         let now = OffsetDateTime::now_utc();
         let expiry = now + Duration::seconds(self.config.signal_ttl_seconds);
 
-        // Calculate USD stats using the relevant CEX price
+        // Trade value in human USD: amount × CEX price (ask when buying on CEX, bid when selling). No wei scaling.
         let trade_value_usd = opportunity.amount * cex_price_ref;
         let gross_pnl = (opportunity.gap_bps / Decimal::from(10_000)) * trade_value_usd;
         let fees = (opportunity.estimated_costs_bps / Decimal::from(10_000)) * trade_value_usd;
         let net_pnl = gross_pnl - fees;
 
-        // Check configured limits
         // Check configured limits
         if net_pnl < self.config.min_profit_usd {
             tracing::info!(

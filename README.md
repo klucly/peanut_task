@@ -198,3 +198,25 @@ println!("Valid: {}", quote.is_valid());
 
 Integration tests for the pricing engine require a running Anvil fork and valid RPC. Run `just fork` (with `ETH_RPC_URL` or `INFURA_API_KEY` in `.env`) before `cargo test` or `just test`.
 
+## Arb flow (ArbChecker)
+
+The arb flow uses **ExchangeClient** (order book), **OrderBookAnalyzer** (CEX prices), **InventoryTracker** (pre-flight), **ArbChecker** (orchestration), and **PricingEngine** (DEX pricing).
+
+```mermaid
+flowchart LR
+    subgraph Arb flow
+        EC[ExchangeClient]
+        OBA[OrderBookAnalyzer]
+        IT[InventoryTracker]
+        AC[ArbChecker]
+        PE[PricingEngine]
+    end
+    EC -->|fetch_order_book| OBA
+    OBA -->|walk_the_book| AC
+    IT -->|can_execute| AC
+    PE -->|DEX pricing| AC
+    AC --> EC
+    AC --> IT
+    AC --> PE
+```
+
