@@ -20,4 +20,4 @@ pub use core::signature_algorithms::{
     SignatureAlgorithm, SignatureData, SignatureAlgorithmError
 };
 pub use core::utility::TypedData;
-pub use strategy::{Direction, Signal, FeeStructure, GeneratorConfig, SignalGenerator, ScorerConfig, SignalScorer, BotConfig, ArbBot};
+pub use strategy::{Direction, Signal, FeeStructure, GeneratorConfig, SignalGenerator, ScorerConfig, SignalScorer, BotConfig, ArbBot, EXIT_CODE_CIRCUIT_TRIPPED};

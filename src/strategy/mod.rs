@@ -14,4 +14,4 @@ pub use generator::{GeneratorConfig, SignalGenerator};
 pub use scorer::{ScorerConfig, SignalScorer};
 pub use executor::{ExecutorConfig, Executor, ExecutionContext, ExecutorState};
 pub use recovery::{CircuitBreakerConfig, CircuitBreaker, ReplayProtection};
-pub use bot::{BotConfig, ArbBot};
+pub use bot::{BotConfig, ArbBot, EXIT_CODE_CIRCUIT_TRIPPED};

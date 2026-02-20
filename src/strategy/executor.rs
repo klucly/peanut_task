@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use time::OffsetDateTime;
 
 use super::fees::FeeStructure;
-use super::recovery::{CircuitBreaker, ReplayProtection};
+use super::recovery::{CircuitBreaker, CircuitBreakerConfig, ReplayProtection};
 use super::signal::{Direction, Signal};
 use crate::chain::ChainClient;
 use crate::exchange::ExchangeClient;
@@ -87,6 +87,7 @@ pub struct ExecutorConfig {
     pub min_fill_ratio: Decimal,
     pub use_flashbots: bool,
     pub simulation_mode: bool,
+    pub circuit_breaker: Option<CircuitBreakerConfig>,
 }
 
 impl Default for ExecutorConfig {
@@ -97,6 +98,7 @@ impl Default for ExecutorConfig {
             min_fill_ratio: dec!(0.8),
             use_flashbots: true,
             simulation_mode: true,
+            circuit_breaker: None,
         }
     }
 }
@@ -108,6 +110,7 @@ impl ExecutorConfig {
         min_fill_ratio: Decimal,
         use_flashbots: bool,
         simulation_mode: bool,
+        circuit_breaker: Option<CircuitBreakerConfig>,
     ) -> Self {
         Self {
             leg1_timeout_secs,
@@ -115,6 +118,7 @@ impl ExecutorConfig {
             min_fill_ratio,
             use_flashbots,
             simulation_mode,
+            circuit_breaker,
         }
     }
 }
@@ -126,6 +130,8 @@ struct LegResult {
     price: Decimal,
     filled: Decimal,
     error: Option<String>,
+    /// True when failure is critical (e.g. real-mode DEX unimplemented); caller must record_critical_failure().
+    critical: bool,
 }
 
 /// Execute arbitrage trades across CEX and DEX.
@@ -150,14 +156,15 @@ impl Executor {
         fee_structure: FeeStructure,
         config: Option<ExecutorConfig>,
     ) -> Self {
+        let cfg = config.unwrap_or_default();
         Self {
             exchange: exchange_client,
             pricing: pricing_module,
             inventory: inventory_tracker,
             chain_client,
             fee_structure,
-            config: config.unwrap_or_default(),
-            circuit_breaker: CircuitBreaker::default(),
+            config: cfg.clone(),
+            circuit_breaker: CircuitBreaker::new(cfg.circuit_breaker),
             replay_protection: ReplayProtection::default(),
         }
     }
@@ -219,7 +226,7 @@ impl Executor {
             self._execute_cex_first(ctx)
         };
 
-        // Record result
+        // Only execution attempts (past pre-flight) count; pre-flight returns above do not reach here.
         self.replay_protection.mark_executed(&signal);
         if ctx.state == ExecutorState::Done {
             self.circuit_breaker.record_success();
@@ -271,8 +278,14 @@ impl Executor {
         let leg2 = self._execute_dex_leg(signal, ctx.leg1_fill_size.unwrap());
 
         if !leg2.success {
+            if leg2.critical {
+                self.circuit_breaker.record_critical_failure();
+            }
             ctx.state = ExecutorState::Unwinding;
-            self._unwind(&ctx);
+            let unwind_critical = self._unwind(&ctx);
+            if unwind_critical {
+                self.circuit_breaker.record_critical_failure();
+            }
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("DEX failed - unwound".to_string());
             return ctx;
@@ -302,6 +315,9 @@ impl Executor {
         let leg1 = self._execute_dex_leg(signal, signal.size);
 
         if !leg1.success {
+            if leg1.critical {
+                self.circuit_breaker.record_critical_failure();
+            }
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("DEX failed (no cost via Flashbots)".to_string());
             return ctx;
@@ -319,7 +335,10 @@ impl Executor {
 
         if !leg2.success {
             ctx.state = ExecutorState::Unwinding;
-            self._unwind(&ctx);
+            let unwind_critical = self._unwind(&ctx);
+            if unwind_critical {
+                self.circuit_breaker.record_critical_failure();
+            }
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("CEX failed after DEX - unwound".to_string());
             return ctx;
@@ -341,6 +360,7 @@ impl Executor {
                 price: signal.cex_price * dec!(1.0001),
                 filled: size,
                 error: None,
+                critical: false,
             };
         }
 
@@ -356,7 +376,27 @@ impl Executor {
             .parse::<f64>()
             .unwrap_or(0.0);
 
-        let exchange = self.exchange.lock().unwrap();
+        if amount_f64 <= 0.0
+            || !amount_f64.is_finite()
+            || price_f64 <= 0.0
+            || !price_f64.is_finite()
+        {
+            return LegResult {
+                success: false,
+                price: Decimal::ZERO,
+                filled: Decimal::ZERO,
+                error: Some("invalid amount or price (parse error)".to_string()),
+                critical: false,
+            };
+        }
+
+        let exchange = self
+            .exchange
+            .lock()
+            .unwrap_or_else(|e| {
+                tracing::error!("Mutex poisoned in executor (exchange): {}", e);
+                e.into_inner()
+            });
         match exchange.create_limit_ioc_order(&signal.pair, side, amount_f64, price_f64) {
             Ok(result) => LegResult {
                 success: result.status == "filled",
@@ -367,6 +407,7 @@ impl Executor {
                 } else {
                     None
                 },
+                critical: false,
             },
             Err(e) => {
                 tracing::error!("CEX Order Failed: {:?}", e);
@@ -375,6 +416,7 @@ impl Executor {
                     price: Decimal::ZERO,
                     filled: Decimal::ZERO,
                     error: Some(format!("Exchange error: {:?}", e)),
+                    critical: false,
                 }
             }
         }
@@ -389,6 +431,7 @@ impl Executor {
                 price: signal.dex_price * dec!(0.9998),
                 filled: size,
                 error: None,
+                critical: false,
             };
         }
 
@@ -405,17 +448,20 @@ impl Executor {
             price: Decimal::ZERO,
             filled: Decimal::ZERO,
             error: Some("DEX execution not implemented — real mode".to_string()),
+            critical: true,
         }
     }
 
     /// Unwind position after a partial execution failure.
-    fn _unwind(&self, _ctx: &ExecutionContext) {
+    /// Returns true if real mode and unwind was required but not implemented (critical).
+    fn _unwind(&self, _ctx: &ExecutionContext) -> bool {
         if self.config.simulation_mode {
             std::thread::sleep(std::time::Duration::from_millis(100));
-            return;
+            return false;
         }
 
         tracing::error!("Real unwind not implemented — manual intervention required");
+        true
     }
 
     /// Calculate actual PnL from execution.

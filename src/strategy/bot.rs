@@ -19,6 +19,10 @@ use super::generator::{GeneratorConfig, SignalGenerator};
 use super::scorer::{ScorerConfig, SignalScorer};
 use super::signal::Direction;
 
+/// Exit code when the circuit breaker has tripped (process exits for operator investigation).
+/// Public so that subprocess tests can assert the bot exits with this code when the circuit trips.
+pub const EXIT_CODE_CIRCUIT_TRIPPED: i32 = 1;
+
 /// Configuration for the arbitrage bot.
 #[derive(Debug, Clone)]
 pub struct BotConfig {
@@ -319,7 +323,11 @@ impl ArbBot {
                 let dex_base = if base == "ETH" { "WETH" } else { &base };
                 let dex_quote = if quote == "ETH" { "WETH" } else { &quote };
 
-                let mut pricing = self.pricing.lock().unwrap();
+                let mut pricing = self.pricing.lock()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Mutex poisoned in bot: {}", e);
+                        e.into_inner()
+                    });
                 if let Some(pool) = pricing.get_pair_by_symbols(dex_base, dex_quote) {
                     let pool_address = pool.address.clone();
                     if let Err(e) = pricing.refresh_pool(&pool_address) {
@@ -363,7 +371,11 @@ impl ArbBot {
 
             // Pre-execution inventory snapshot
             let (cex_asset, cex_bal, wallet_asset, wallet_bal) = {
-                let inventory = self.inventory.lock().unwrap();
+                let inventory = self.inventory.lock()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Mutex poisoned in bot: {}", e);
+                        e.into_inner()
+                    });
                 match signal.direction {
                     Direction::BuyCexSellDex => (
                         quote.clone(),
@@ -437,11 +449,6 @@ impl ArbBot {
                     actual_pnl,
                     true,
                 );
-
-                // Log circuit breaker status if tripped
-                if self.executor.circuit_breaker.is_open() {
-                    tracing::error!("Circuit breaker tripped due to failure");
-                }
             } else {
                 let reason = ctx.error.as_deref().unwrap_or("unknown error");
                 tracing::error!(
@@ -461,6 +468,11 @@ impl ArbBot {
                     dec!(0),
                     false,
                 );
+            }
+
+            if self.executor.circuit_breaker.is_open() {
+                tracing::error!("Circuit breaker tripped — exiting for operator investigation");
+                std::process::exit(EXIT_CODE_CIRCUIT_TRIPPED);
             }
 
             // Running stats summary
@@ -487,7 +499,11 @@ impl ArbBot {
                 let leg1_price = ctx.leg1_fill_price.unwrap_or(signal.cex_price);
                 let leg2_price = ctx.leg2_fill_price.unwrap_or(signal.dex_price);
 
-                let mut inventory = self.inventory.lock().unwrap();
+                let mut inventory = self.inventory.lock()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Mutex poisoned in bot: {}", e);
+                        e.into_inner()
+                    });
                 match signal.direction {
                     Direction::BuyCexSellDex => {
                         // CEX leg: buy base with quote
@@ -549,7 +565,11 @@ impl ArbBot {
 
             // Post-swap inventory (concise; pre-swap already in [SIGNAL])
             {
-                let inventory = self.inventory.lock().unwrap();
+                let inventory = self.inventory.lock()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Mutex poisoned in bot: {}", e);
+                        e.into_inner()
+                    });
                 let (cex_asset2, cex_bal2, wallet_asset2, wallet_bal2) = match signal.direction {
                     Direction::BuyCexSellDex => (
                         quote.as_str(),
@@ -586,11 +606,19 @@ impl ArbBot {
 
     /// Synchronize balances from exchange.
     fn _sync_cex_balances(&mut self) {
-        let exchange = self.exchange.lock().unwrap();
+        let exchange = self.exchange.lock()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Mutex poisoned in bot: {}", e);
+                        e.into_inner()
+                    });
         match exchange.fetch_balance() {
             Ok(balances) => {
                 drop(exchange); // Release lock before acquiring inventory lock
-                let mut inventory = self.inventory.lock().unwrap();
+                let mut inventory = self.inventory.lock()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Mutex poisoned in bot: {}", e);
+                        e.into_inner()
+                    });
                 if let Err(e) =
                     inventory.update_from_cex(crate::inventory::Venue::Binance, balances)
                 {
@@ -606,7 +634,11 @@ impl ArbBot {
     /// Synchronize balances from wallet.
     fn _sync_wallet_balances(&mut self) {
         tracing::debug!("Starting wallet balance sync...");
-        let pricing = self.pricing.lock().unwrap();
+        let pricing = self.pricing.lock()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Mutex poisoned in bot: {}", e);
+                        e.into_inner()
+                    });
         let tokens_with_addr = pricing.get_tokens_with_addresses();
         drop(pricing);
 
@@ -678,7 +710,11 @@ impl ArbBot {
         tracing::debug!("Synced Wallet Balance: ETH = {}", eth_bal);
 
         // Update inventory
-        let mut inventory = self.inventory.lock().unwrap();
+        let mut inventory = self.inventory.lock()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Mutex poisoned in bot: {}", e);
+                        e.into_inner()
+                    });
         if let Err(e) =
             inventory.update_from_wallet(crate::inventory::Venue::Wallet, wallet_balances)
         {

@@ -8,7 +8,8 @@ use super::signal::Signal;
 /// Configuration for the circuit breaker.
 #[derive(Debug, Clone)]
 pub struct CircuitBreakerConfig {
-    /// Number of failures within window before tripping
+    /// Number of failures within window before tripping.
+    /// Failures 1..(threshold-1) emit a WARNING log; the final failure trips the breaker.
     pub failure_threshold: u32,
     /// Time window in seconds for counting failures
     pub window_seconds: f64,
@@ -37,15 +38,15 @@ impl CircuitBreakerConfig {
 }
 
 /// Circuit breaker to prevent cascading failures.
-/// 
+///
 /// Tracks failures within a time window and trips when threshold is exceeded.
 /// Automatically resets after cooldown period.
 #[derive(Debug)]
 pub struct CircuitBreaker {
     config: CircuitBreakerConfig,
-    /// Timestamps of recent failures
+    /// Timestamps of recent failures (used for windowed threshold check)
     failures: Vec<f64>,
-    /// Timestamp when breaker was tripped
+    /// Timestamp when breaker was tripped (None = closed)
     tripped_at: Option<f64>,
 }
 
@@ -58,7 +59,10 @@ impl CircuitBreaker {
         }
     }
 
-    /// Record a failure and check if breaker should trip.
+    /// Record a single execution failure.
+    ///
+    /// - Failures below `failure_threshold` emit a **WARN** log: "[CB] WARNING X/threshold"
+    /// - On reaching `failure_threshold` the breaker **trips** and halts all execution.
     pub fn record_failure(&mut self) {
         let now = current_timestamp();
         self.failures.push(now);
@@ -67,25 +71,56 @@ impl CircuitBreaker {
         let cutoff = now - self.config.window_seconds;
         self.failures.retain(|&t| t > cutoff);
 
-        // Trip if threshold exceeded
-        if self.failures.len() >= self.config.failure_threshold as usize {
+        let count = self.failures.len() as u32;
+        let threshold = self.config.failure_threshold;
+
+        if count >= threshold {
             self.trip();
+        } else {
+            // Warning: not yet tripped but accumulating
+            tracing::warn!(
+                "[CB] WARNING {}/{} failures in window ({:.0}s). Breaker will trip at {}.",
+                count,
+                threshold,
+                self.config.window_seconds,
+                threshold,
+            );
         }
     }
 
-    /// Record a success (placeholder for future reset logic).
+    /// Record a **catastrophic** failure that must halt execution immediately,
+    /// regardless of the failure window count.
+    ///
+    /// Use for: unimplemented real-mode paths, unwind failures, or any condition
+    /// where continuing is guaranteed to cause financial harm.
+    pub fn record_critical_failure(&mut self) {
+        tracing::error!("[CB] CRITICAL FAILURE — tripping circuit breaker immediately (no warmup)");
+        self.trip();
+    }
+
+    /// Record a success (clears the warning count on consecutive successes).
     pub fn record_success(&mut self) {
-        // Could implement gradual reset here
+        // Currently a no-op; could implement gradual failure-count decay here
+    }
+
+    /// Returns the number of failures currently within the counting window.
+    pub fn failure_count(&self) -> usize {
+        let now = current_timestamp();
+        let cutoff = now - self.config.window_seconds;
+        self.failures.iter().filter(|&&t| t > cutoff).count()
     }
 
     /// Trip the circuit breaker.
     fn trip(&mut self) {
         self.tripped_at = Some(current_timestamp());
-        tracing::error!("CIRCUIT BREAKER TRIPPED");
+        tracing::error!(
+            "[CB] CIRCUIT BREAKER TRIPPED — halting all execution. Cooldown: {:.0}s",
+            self.config.cooldown_seconds
+        );
     }
 
     /// Check if the circuit breaker is open (tripped).
-    /// 
+    ///
     /// Returns true if tripped and still in cooldown period.
     /// Auto-resets if cooldown has elapsed.
     pub fn is_open(&mut self) -> bool {
@@ -125,7 +160,7 @@ impl Default for CircuitBreaker {
 }
 
 /// Replay protection to prevent duplicate signal execution.
-/// 
+///
 /// Tracks executed signals with TTL-based cleanup.
 #[derive(Debug)]
 pub struct ReplayProtection {
@@ -159,7 +194,7 @@ impl ReplayProtection {
     fn cleanup(&mut self) {
         let now = current_timestamp();
         let cutoff = now - self.ttl_seconds;
-        self.executed.retain(|_, &mut timestamp| timestamp > cutoff);
+        self.executed.retain(|_, ts| *ts > cutoff);
     }
 }
 
@@ -180,8 +215,8 @@ mod tests {
     use super::*;
 
     fn create_test_signal(id: &str) -> Signal {
-        use rust_decimal_macros::dec;
         use super::super::signal::Direction;
+        use rust_decimal_macros::dec;
 
         Signal::create(
             "ETH/USDT".to_string(),

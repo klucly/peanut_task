@@ -115,6 +115,14 @@ fn test_time_until_reset() {
     assert!(new_remaining < remaining, "Time remaining should decrease");
 }
 
+#[test]
+fn test_circuit_breaker_critical_trips_immediately() {
+    let mut cb = CircuitBreaker::default();
+    assert!(!cb.is_open(), "Breaker should start closed");
+    cb.record_critical_failure();
+    assert!(cb.is_open(), "Breaker should trip immediately on critical failure");
+}
+
 // ============================================================================
 // Replay Protection Tests
 // ============================================================================

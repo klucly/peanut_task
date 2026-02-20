@@ -87,7 +87,7 @@ fn test_default_executor_config() {
 
 #[test]
 fn test_custom_executor_config() {
-    let config = ExecutorConfig::new(10, 120, dec!(0.9), false, false);
+    let config = ExecutorConfig::new(10, 120, dec!(0.9), false, false, None);
     assert_eq!(config.leg1_timeout_secs, 10);
     assert_eq!(config.leg2_timeout_secs, 120);
     assert_eq!(config.min_fill_ratio, dec!(0.9));
@@ -335,6 +335,25 @@ fn test_cb_not_tripped_by_duplicate_signal() {
     assert!(
         !executor.circuit_breaker.is_open(),
         "CB must not trip on duplicate-signal rejections"
+    );
+}
+
+#[test]
+fn test_executor_real_mode_dex_failure_trips_circuit_critical() {
+    // DEX-first, real mode: leg1 is DEX (unimplemented), so one execution trips circuit immediately (critical).
+    let mut executor = create_test_executor_sync(Some(ExecutorConfig {
+        simulation_mode: false,
+        use_flashbots: true, // DEX first — we hit unimplemented DEX leg without needing CEX
+        ..ExecutorConfig::default()
+    }));
+
+    let signal = create_test_signal();
+    let ctx = executor.execute(signal);
+
+    assert_eq!(ctx.state, ExecutorState::Failed);
+    assert!(
+        executor.circuit_breaker.is_open(),
+        "Circuit breaker should trip immediately on real-mode DEX unimplemented (critical)"
     );
 }
 

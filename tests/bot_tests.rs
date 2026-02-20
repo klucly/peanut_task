@@ -263,3 +263,16 @@ fn test_bot_cb_not_tripped_by_high_threshold_skip() {
         "CB must not trip when signals are skipped due to score threshold"
     );
 }
+
+#[test]
+fn test_exit_code_circuit_tripped_constant() {
+    // Document the exit code used when the bot exits due to circuit breaker trip.
+    // To fully verify exit-on-trip: run the arb_bot binary in a subprocess, trigger one
+    // execution that trips the circuit (e.g. real mode + DEX-first), then assert the
+    // subprocess exit code equals peanut_task::EXIT_CODE_CIRCUIT_TRIPPED.
+    assert_eq!(
+        peanut_task::EXIT_CODE_CIRCUIT_TRIPPED,
+        1,
+        "Exit code for circuit breaker trip must be 1 for operator tooling"
+    );
+}

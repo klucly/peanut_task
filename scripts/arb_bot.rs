@@ -6,7 +6,7 @@ use peanut_task::{
     chain::{ChainClient, RpcUrl},
     core::utility::Address,
     pricing::{Chain, PricingEngine},
-    strategy::ExecutorConfig,
+    strategy::{CircuitBreakerConfig, ExecutorConfig},
 };
 use rust_decimal::Decimal;
 use tokio::signal;
@@ -222,6 +222,18 @@ fn main() {
     // Initialize fee structure
     let fee_structure = FeeStructure::default();
 
+    // Circuit breaker: optional env vars (all three must be set to override defaults)
+    let circuit_breaker = match (
+        env::var("CIRCUIT_FAILURE_THRESHOLD").ok().and_then(|s| s.parse::<u32>().ok()),
+        env::var("CIRCUIT_WINDOW_SECS").ok().and_then(|s| s.parse::<f64>().ok()),
+        env::var("CIRCUIT_COOLDOWN_SECS").ok().and_then(|s| s.parse::<f64>().ok()),
+    ) {
+        (Some(threshold), Some(window), Some(cooldown)) => {
+            Some(CircuitBreakerConfig::new(threshold, window, cooldown))
+        }
+        _ => None,
+    };
+
     // Create bot configuration
     let executor_config = ExecutorConfig::new(
         10,                               // leg1_timeout_secs
@@ -229,6 +241,7 @@ fn main() {
         Decimal::try_from(0.98).unwrap(), // min_fill_ratio
         false,                            // use_flashbots
         simulation_mode,
+        circuit_breaker,
     );
 
     let bot_config = BotConfig::new(
